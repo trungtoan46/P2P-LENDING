@@ -60,6 +60,27 @@ const userDetailsSchema = Joi.object({
         })
 });
 
+const updateProfileSchema = Joi.object({
+    name: Joi.string().min(2).max(100).optional(),
+    birth: Joi.date().max('now').optional()
+        .messages({
+            'date.max': 'Birth date cannot be in the future'
+        }),
+    sex: Joi.string().valid(...genderRegex).optional(),
+    email: Joi.string().email().optional(),
+    address: Joi.string().min(10).max(200).optional(),
+    city: Joi.string().min(2).max(50).optional(),
+    ssn: Joi.string().pattern(ssnRegex).optional()
+        .messages({
+            'string.pattern.base': 'SSN must be 9 or 12 digits'
+        }),
+    job: Joi.string().min(2).max(100).optional(),
+    income: Joi.number().min(0).optional()
+        .messages({
+            'number.min': 'Income must be a positive number'
+        })
+});
+
 // Loan Validators
 const createLoanSchema = Joi.object({
     capital: Joi.number().integer().positive().min(1000000).max(100000000).required()
@@ -141,6 +162,7 @@ module.exports = {
 
     // User
     userDetailsSchema,
+    updateProfileSchema,
 
     // Loan
     createLoanSchema,

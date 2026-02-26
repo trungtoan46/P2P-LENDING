@@ -76,6 +76,12 @@ const ProfileScreen = ({ navigation }) => {
         },
 
         {
+            id: 'edit_profile',
+            icon: 'account-edit-outline',
+            label: 'Chỉnh sửa thông tin',
+            onPress: () => navigation?.navigate('EditProfile'),
+        },
+        {
             id: 'wallet',
             icon: 'wallet',
             label: 'Ví của tôi',

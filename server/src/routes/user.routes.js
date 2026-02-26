@@ -8,7 +8,7 @@ const userController = require('../controllers/user.controller');
 const { authenticate, isAdmin } = require('../middlewares/auth.middleware');
 const { ValidationError } = require('../utils/errors');
 const { validateBody, validateQuery } = require('../middlewares/validation.middleware');
-const { userDetailsSchema, paginationSchema } = require('../utils/validators');
+const { userDetailsSchema, updateProfileSchema, paginationSchema } = require('../utils/validators');
 const { IMAGE_EXTENSIONS } = require('../constants');
 const Joi = require('joi');
 const multer = require('multer');
@@ -104,7 +104,7 @@ router.get('/kyc/pending',
 
 router.put('/profile',
     authenticate,
-    validateBody(userDetailsSchema),
+    validateBody(updateProfileSchema),
     (req, res, next) => userController.updateProfile(req, res, next)
 );
 

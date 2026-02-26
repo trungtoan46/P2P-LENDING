@@ -21,7 +21,7 @@ export { default as WalletScreen } from './wallet/WalletScreen';
 export { PaymentsScreen } from './payments';
 
 // Profile
-export { ProfileScreen, EkycScreen } from './profile';
+export { ProfileScreen, EkycScreen, EditProfileScreen } from './profile';
 
 // Others
 export { default as ReminderScreen } from './reminders/ReminderScreen';

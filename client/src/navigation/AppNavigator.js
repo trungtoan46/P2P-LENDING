@@ -35,7 +35,8 @@ import {
 
     RepaymentScheduleScreen,
     AutoInvestScreen,
-    CreateAutoInvestScreen
+    CreateAutoInvestScreen,
+    EditProfileScreen
 } from '../screens';
 
 const Stack = createNativeStackNavigator();
@@ -156,6 +157,7 @@ const MainStack = () => (
             }}
         />
         <Stack.Screen name="Ekyc" component={EkycScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
 );
 
