@@ -71,9 +71,11 @@ class WalletController {
 
     async withdraw(req, res, next) {
         try {
-            const { amount, description } = req.body;
-            const wallet = await walletService.withdraw(req.user.id, amount, description);
-            return successResponse(res, wallet, 'Rút tiền thành công');
+            // Tạm thời vô hiệu hóa tính năng rút tiền theo yêu cầu
+            return res.status(400).json({
+                success: false,
+                message: 'Tính năng rút tiền hiện tại đang bị vô hiệu hóa.'
+            });
         } catch (error) {
             next(error);
         }
