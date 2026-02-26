@@ -62,12 +62,12 @@ const userDetailsSchema = Joi.object({
 
 // Loan Validators
 const createLoanSchema = Joi.object({
-    capital: Joi.number().integer().positive().min(1000000).max(50000000).required()
+    capital: Joi.number().integer().positive().min(1000000).max(100000000).required()
         .messages({
             'number.integer': 'Loan amount must be a whole number',
             'number.positive': 'Loan amount must be positive',
             'number.min': 'Minimum loan amount is 1,000,000 VND',
-            'number.max': 'Maximum loan amount is 50,000,000 VND'
+            'number.max': 'Maximum loan amount is 100,000,000 VND (Nghị định 2026)'
         }),
     term: Joi.number().integer().min(1).max(18).required()
         .messages({

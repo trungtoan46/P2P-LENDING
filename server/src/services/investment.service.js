@@ -13,6 +13,7 @@ const { calculateInvestmentReturns, calculateNotes, generateRandomString } = req
 const { INVESTMENT_STATUS, BASE_UNIT_PRICE, LOAN_STATUS } = require('../constants');
 const { ValidationError, NotFoundError, ConflictError } = require('../utils/errors');
 const logger = require('../utils/logger');
+const notificationService = require('./notification.service');
 
 class InvestmentService {
     maskPhone(phone) {
@@ -114,6 +115,8 @@ class InvestmentService {
             loan.investedNotes += waitingRoom.notes;
             if (loan.investedNotes >= loan.totalNotes) {
                 loan.status = LOAN_STATUS.WAITING_SIGNATURE;
+                // Gui thong bao cho borrower de ky hop dong
+                await notificationService.notifyLoanFunded(loan);
             }
             await loan.save();
 
@@ -193,6 +196,8 @@ class InvestmentService {
             loan.investedNotes += notes;
             if (loan.investedNotes >= loan.totalNotes) {
                 loan.status = LOAN_STATUS.WAITING_SIGNATURE;
+                // Gui thong bao cho borrower de ky hop dong
+                await notificationService.notifyLoanFunded(loan);
             }
             await loan.save();
 
@@ -282,10 +287,12 @@ class InvestmentService {
                 throw new ValidationError('Lỗi khi liên kết transaction với investment');
             }
 
-            // Cập nhật loan
+            // Cap nhat loan
             loan.investedNotes += notes;
             if (loan.investedNotes >= loan.totalNotes) {
                 loan.status = LOAN_STATUS.WAITING_SIGNATURE;
+                // Gui thong bao cho borrower de ky hop dong
+                await notificationService.notifyLoanFunded(loan);
             }
             await loan.save();
 

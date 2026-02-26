@@ -161,6 +161,37 @@ const LoanDetailScreen = ({ navigation, route }) => {
         );
     };
 
+    const handleCancelLoan = async () => {
+        Alert.alert(
+            'Hủy khoản vay',
+            'Bạn có chắc chắn muốn hủy yêu cầu vay này không?',
+            [
+                { text: 'Không', style: 'cancel' },
+                {
+                    text: 'Hủy khoản vay',
+                    style: 'destructive',
+                    onPress: async () => {
+                        setLoading(true);
+                        try {
+                            const result = await LoansApi.cancel(loanId, 'Người vay tự hủy trên ứng dụng');
+                            if (result.success) {
+                                Alert.alert('Thành công', 'Đã hủy khoản vay thành công!');
+                                loadLoanDetail();
+                            } else {
+                                Alert.alert('Lỗi', result.message || 'Hủy khoản vay thất bại');
+                            }
+                        } catch (error) {
+                            console.log('Cancel loan error:', error);
+                            Alert.alert('Lỗi', error.message || 'Có lỗi xảy ra khi hủy khoản vay');
+                        } finally {
+                            setLoading(false);
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     const handleInvest = async () => {
         const amount = notesCount * BASE_UNIT_PRICE;
 
@@ -347,6 +378,21 @@ const LoanDetailScreen = ({ navigation, route }) => {
                             title="KÝ HỢP ĐỒNG & NHẬN TIỀN"
                             onPress={handleSignContract}
                             style={{ backgroundColor: Colors.primary }}
+                        />
+                    </View>
+                )}
+
+                {/* Cancel Loan Button for Borrower */}
+                {isBorrower && ['pending', 'approved'].includes(loan.status) && (
+                    <View style={styles.card}>
+                        <Text style={styles.sectionTitle}>HỦY KHOẢN VAY</Text>
+                        <Text style={{ color: Colors.textSecondary, marginBottom: 12 }}>
+                            Bạn có thể hủy yêu cầu vay này vì chưa được giải ngân. Các khoản đầu tư (nếu có) sẽ được hoàn trả.
+                        </Text>
+                        <Button
+                            title="HỦY KHOẢN VAY NÀY"
+                            onPress={handleCancelLoan}
+                            style={{ backgroundColor: Colors.error }}
                         />
                     </View>
                 )}

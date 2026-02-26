@@ -112,7 +112,7 @@ class LoanController {
                     const invId = (inv.investorId?._id || inv.investorId).toString();
                     if (!groupedInvestors[invId]) {
                         const details = await UserDetails.findOne({ userId: invId });
-                        const invObj = inv.toObject();
+                        const invObj = typeof inv.toObject === 'function' ? inv.toObject() : inv;
                         groupedInvestors[invId] = {
                             ...invObj,
                             investorDetails: details || null,
@@ -125,7 +125,7 @@ class LoanController {
                 }
 
                 // Chuyển sang object để có thể gán thêm field
-                loan = loan.toObject();
+                loan = typeof loan.toObject === 'function' ? loan.toObject() : loan;
                 loan.borrowerDetails = borrowerDetails || null;
                 loan.investors = Object.values(groupedInvestors);
             }
@@ -216,6 +216,7 @@ class LoanController {
 
 
     /**
+    /**
      * Sign loan contract (borrower only)
      * POST /api/loans/:id/sign
      */
@@ -228,41 +229,21 @@ class LoanController {
             next(error);
         }
     }
+
+    /**
+     * Cancel loan (borrower only)
+     * POST /api/loans/:id/cancel
+     */
+    async cancelLoan(req, res, next) {
+        try {
+            const { id } = req.params;
+            const { reason } = req.body;
+            const loan = await loanService.cancelLoan(id, req.user.id, reason);
+            return successResponse(res, loan, 'Đã hủy khoản vay thành công');
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 module.exports = new LoanController();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

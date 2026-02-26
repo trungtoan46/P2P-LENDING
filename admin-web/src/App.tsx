@@ -8,7 +8,7 @@ import { ROUTES } from './config/routes';
 // Features
 import { DashboardPage } from './features/dashboard';
 import { UsersListPage, KycApprovalPage, CustomerDetailPage } from './features/users';
-import { LoansListPage, LoanDetailPage } from './features/loans';
+import { LoansListPage, LoanDetailPage, LoanConfigPage } from './features/loans';
 import { TransactionsPage, FeeCollectionPage, RepaymentsPage } from './features/finance';
 import { LoginPage } from './features/auth';
 import { UserCategory, LoanStatus } from './config/enums';
@@ -91,7 +91,7 @@ const App: React.FC = () => {
             {/* Settings */}
             <Route
               path={ROUTES.PRODUCT_CONFIG}
-              element={<div style={{ padding: 24 }}>Trang cấu hình sản phẩm đang phát triển...</div>}
+              element={<LoanConfigPage />}
             />
           </Route>
 

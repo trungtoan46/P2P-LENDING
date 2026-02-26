@@ -66,10 +66,10 @@ class InvestmentScheduler {
 
                         // 4. Notify User
                         await Notification.create({
-                            recipient: investment.investorId,
+                            userId: investment.investorId,
                             type: 'system',
                             title: 'Lệnh đầu tư tự động hết hạn',
-                            content: `Lệnh đầu tư vào khoản vay đã bị hủy do quá thời gian xác nhận (60 phút). Số tiền ${investment.amount.toLocaleString()} VND đã được hoàn lại vào ví.`,
+                            body: `Lệnh đầu tư vào khoản vay đã bị hủy do quá thời gian xác nhận (60 phút). Số tiền ${investment.amount.toLocaleString()} VND đã được hoàn lại vào ví.`,
                             data: { investmentId: investment._id, type: 'investment_expired' }
                         });
 

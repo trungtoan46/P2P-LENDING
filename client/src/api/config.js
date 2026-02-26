@@ -39,6 +39,7 @@ export const ENDPOINTS = {
         APPROVE: (id) => `/api/loans/${id}/approve`,
         REJECT: (id) => `/api/loans/${id}/reject`,
         SIGN: (id) => `/api/loans/${id}/sign`,
+        CANCEL: (id) => `/api/loans/${id}/cancel`,
     },
     INVESTMENTS: {
         CREATE: '/api/investments',

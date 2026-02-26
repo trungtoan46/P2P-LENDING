@@ -53,6 +53,16 @@ router.post('/:id/sign',
     (req, res, next) => loanController.signContract(req, res, next)
 );
 
+// Borrower cancel loan
+router.post('/:id/cancel',
+    authenticate,
+    isBorrower,
+    validateBody(Joi.object({
+        reason: Joi.string().max(500).optional().allow('')
+    })),
+    (req, res, next) => loanController.cancelLoan(req, res, next)
+);
+
 // Public route - Get loan by ID (optional auth for authorization check)
 router.get('/:id',
     optionalAuth,

@@ -47,6 +47,10 @@ const LoansApi = {
     async calculateRate(capital, term) {
         return httpClient.post('/api/loans/calculate-rate', { capital, term });
     },
+
+    async cancel(loanId, reason) {
+        return httpClient.post(ENDPOINTS.LOANS.CANCEL(loanId), { reason });
+    },
 };
 
 export default LoansApi;

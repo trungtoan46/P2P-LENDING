@@ -17,7 +17,7 @@ const loanSchema = new mongoose.Schema({
         type: Number,
         required: [true, 'Loan amount is required'],
         min: [1000000, 'Minimum loan amount is 1,000,000 VND'],
-        max: [50000000, 'Maximum loan amount is 50,000,000 VND']
+        max: [100000000, 'Maximum loan amount is 100,000,000 VND']
     },
 
     term: {
@@ -133,6 +133,16 @@ const loanSchema = new mongoose.Schema({
     },
 
     rejectionReason: {
+        type: String,
+        default: null
+    },
+
+    cancelledAt: {
+        type: Date,
+        default: null
+    },
+
+    cancellationReason: {
         type: String,
         default: null
     },

@@ -26,12 +26,12 @@ const SERVICE_UNAVAILABLE_CODE = 503;
 
 // Financial Business Logic Constants
 const BASE_UNIT_PRICE = 50 * Math.pow(10, 4);        // 500,000 VND
-const CAPITAL_COEFFICIENT = 2 * Math.pow(10, -8);    // Tăng nhẹ lại trọng số Khoản vay
+const CAPITAL_COEFFICIENT = 3 * Math.pow(10, -7);
 const DEFAULT_CREDIT_SCORE = 580;
-const FACTOR_CONSTANT = 35;                          // Mở rộng mẫu số để làm mượt dải phân phối lãi suất
-const FICO_COEFFICIENT = 0.012;                      // Giảm nhẹ sức nặng của FICO
+const FACTOR_CONSTANT = 24;
+const FICO_COEFFICIENT = 0.015;
 const MONTH_COEFFICIENT = 1 / 12;
-const MAX_CAPITAL = 50 * Math.pow(10, 6);            // 50,000,000 VND
+const MAX_CAPITAL = 100 * Math.pow(10, 6);           // 100,000,000 VND (Nghị định 2026)
 const MIN_CAPITAL = 1 * Math.pow(10, 6);             // 1,000,000 VND
 const MAX_PERIOD_MONTHS = 18;
 const MIN_PERIOD_MONTHS = 1;
@@ -39,6 +39,8 @@ const INVESTING_STAGE_DAYS = 10;
 const SERVICE_FEE = 0.01;                              // 1%
 const SETTLEMENT_DAY_GAP = 5;
 const MAX_ACTIVE_LOAN_COUNT = 5;
+const MAX_TOTAL_BORROWING_PLATFORM = 100 * Math.pow(10, 6);  // 100,000,000 VND - Hạn mức vay tối đa trên 1 nền tảng (Nghị định 2026)
+const MAX_TOTAL_BORROWING_MARKET = 400 * Math.pow(10, 6);    // 400,000,000 VND - Hạn mức vay tối đa trên toàn thị trường (Nghị định 2026, tham chiếu)
 const PENALTY_PRINCIPAL_FACTOR = 1.5;                  // 150% lãi suất trong hạn
 const PENALTY_INTEREST_RATE = 0.1;                     // 10%/năm cho lãi chậm trả
 
@@ -55,6 +57,7 @@ const LOAN_STATUS = {
     CLEAN: 'clean',
     FAIL: 'fail',
     CURRENT: 'current',
+    CANCELLED: 'cancelled',
     ALL: 'all'
 };
 
@@ -69,6 +72,7 @@ const INVESTMENT_STATUS = {
     COMPLETED: 'completed',
     CLEAN: 'clean',
     FAIL: 'fail',
+    CANCELLED: 'cancelled',
     ALL: 'all'
 };
 
@@ -168,6 +172,8 @@ module.exports = {
     SERVICE_FEE,
     SETTLEMENT_DAY_GAP,
     MAX_ACTIVE_LOAN_COUNT,
+    MAX_TOTAL_BORROWING_PLATFORM,
+    MAX_TOTAL_BORROWING_MARKET,
     PENALTY_PRINCIPAL_FACTOR,
     PENALTY_INTEREST_RATE,
 

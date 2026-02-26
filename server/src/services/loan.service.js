@@ -5,6 +5,7 @@
 const Loan = require('../models/Loan');
 const User = require('../models/User');
 const UserDetails = require('../models/UserDetails');
+const Config = require('../models/Config');
 const paymentService = require('./payment.service');
 const reminderService = require('./reminder.service');
 const notificationService = require('./notification.service');
@@ -25,8 +26,8 @@ const {
     BASE_UNIT_PRICE,
     INVESTING_STAGE_DAYS,
     DEFAULT_CREDIT_SCORE,
-    MAX_ACTIVE_LOAN_COUNT
-} = require('../constants');
+    MAX_ACTIVE_LOAN_COUNT,
+    MAX_TOTAL_BORROWING_PLATFORM } = require('../constants');
 const { ValidationError, NotFoundError, ConflictError } = require('../utils/errors');
 const logger = require('../utils/logger');
 
@@ -86,6 +87,36 @@ class LoanService {
 
         if (activeLoans >= MAX_ACTIVE_LOAN_COUNT) {
             throw new ConflictError(`Chỉ được phép có tối đa ${MAX_ACTIVE_LOAN_COUNT} khoản vay đang hoạt động`);
+        }
+
+        // Kiểm tra hạn mức vay tối đa trên nền tảng (Nghị định 2026: 100 triệu VND/nền tảng)
+        const totalOutstandingResult = await Loan.aggregate([
+            {
+                $match: {
+                    borrowerId: borrower._id,
+                    status: { $in: [LOAN_STATUS.PENDING, LOAN_STATUS.APPROVED, LOAN_STATUS.ACTIVE, LOAN_STATUS.WAITING, LOAN_STATUS.WAITING_SIGNATURE] }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    totalCapital: { $sum: '$capital' }
+                }
+            }
+        ]);
+
+        const currentTotalBorrowing = totalOutstandingResult.length > 0 ? totalOutstandingResult[0].totalCapital : 0;
+        const projectedTotal = currentTotalBorrowing + capital;
+
+        if (projectedTotal > MAX_TOTAL_BORROWING_PLATFORM) {
+            const remaining = MAX_TOTAL_BORROWING_PLATFORM - currentTotalBorrowing;
+            const formatVND = (n) => n.toLocaleString('vi-VN');
+            throw new ConflictError(
+                `Vượt hạn mức vay tối đa trên nền tảng (Nghị định 2026). ` +
+                `Tổng dư nợ hiện tại: ${formatVND(currentTotalBorrowing)} VND. ` +
+                `Hạn mức tối đa: ${formatVND(MAX_TOTAL_BORROWING_PLATFORM)} VND. ` +
+                `Số tiền còn có thể vay: ${formatVND(Math.max(0, remaining))} VND.`
+            );
         }
 
         // Lấy thông tin chi tiết người vay để gọi Credit Scoring API
@@ -246,6 +277,64 @@ class LoanService {
 
         // Gửi thông báo tạo đơn vay thành công
         await notificationService.notifyLoanCreated(loan);
+
+        // === Kiểm tra cấu hình tự duyệt ===
+        try {
+            const approvalConfig = await Config.findOne({ key: 'loan_approval_mode' });
+            const mode = approvalConfig?.value?.mode || 'manual';
+
+            let shouldAutoApprove = false;
+
+            if (mode === 'auto_full') {
+                shouldAutoApprove = true;
+                logger.info(`[AutoApprove] Chế độ tự duyệt toàn bộ - Loan ${loan._id}`);
+            } else if (mode === 'auto_conditional') {
+                const conditions = approvalConfig.value.conditions || {};
+                const minScore = conditions.minCreditScore || 600;
+                const maxCap = conditions.maxCapital || 50000000;
+                const maxTerm = conditions.maxTerm || 12;
+
+                if (creditScore >= minScore && capital <= maxCap && term <= maxTerm) {
+                    shouldAutoApprove = true;
+                    logger.info(`[AutoApprove] Đạt điều kiện tự duyệt - Loan ${loan._id} (Score: ${creditScore}>=${minScore}, Capital: ${capital}<=${maxCap}, Term: ${term}<=${maxTerm})`);
+                } else {
+                    logger.info(`[AutoApprove] Không đạt điều kiện - Loan ${loan._id} (Score: ${creditScore}, Capital: ${capital}, Term: ${term})`);
+                }
+            }
+
+            if (shouldAutoApprove) {
+                loan.status = LOAN_STATUS.APPROVED;
+                // loan.approvedBy = 'system'; // This causes Cast to ObjectId error
+                loan.approvedAt = new Date();
+                await loan.save();
+
+                // Ghi blockchain
+                if (loan.blockchainContractId) {
+                    try {
+                        await fabricService.updateLoanStatus(
+                            loan.blockchainContractId,
+                            'approved',
+                            { adminId: 'system', approvedAt: new Date().toISOString() }
+                        );
+                    } catch (bcErr) {
+                        logger.warn(`[AutoApprove] Lỗi ghi blockchain: ${bcErr.message}`);
+                    }
+                }
+
+                // Gửi thông báo đã duyệt
+                await notificationService.notifyLoanApproved(loan);
+
+                // Kích hoạt Auto-Invest Matching
+                matchingService.performMatching(loan._id).catch(err => {
+                    logger.error(`[AutoInvest] Lỗi matching sau khi auto-approve loan ${loan._id}: ${err.message}`);
+                });
+
+                logger.info(`[AutoApprove] Đã tự duyệt khoản vay: ${loan._id}`);
+            }
+        } catch (autoErr) {
+            // Không throw lỗi - khoản vay vẫn được tạo ở trạng thái PENDING
+            logger.error(`[AutoApprove] Lỗi kiểm tra tự duyệt: ${autoErr.message}`);
+        }
 
         return loan;
     }
@@ -634,6 +723,84 @@ class LoanService {
         await notificationService.notifyLoanSigned(loan);
 
         logger.info(`Borrower ${userId} signed loan contract ${loanId}`);
+        return loan;
+    }
+
+    /**
+     * Hủy khoản vay (Borrower tự hủy)
+     * Chỉ được hủy khi đang ở trạng thái PENDING hoặc APPROVED
+     */
+    async cancelLoan(loanId, borrowerId, reason = 'Người vay tự hủy') {
+        const loan = await Loan.findById(loanId);
+        if (!loan) {
+            throw new NotFoundError('Không tìm thấy khoản vay');
+        }
+
+        if (loan.borrowerId.toString() !== borrowerId) {
+            throw new ValidationError('Không có quyền hủy khoản vay này');
+        }
+
+        // Chỉ cho phép hủy nếu vay chưa có người đầu tư (PENDING) 
+        // hoặc đã được duyệt nhưng chưa gom đủ vốn/chưa giải ngân (APPROVED)
+        if (![LOAN_STATUS.PENDING, LOAN_STATUS.APPROVED].includes(loan.status)) {
+            throw new ValidationError(`Không thể hủy khoản vay ở trạng thái ${loan.status}`);
+        }
+
+        // Nếu khoản vay đang ở APPROVED, có thể đã có người đầu tư một phần vốn
+        // Cần hoàn tiền cho các nhà đầu tư hiện tại
+        if (loan.investedNotes > 0) {
+            const Investment = require('../models/Investment');
+            const investments = await Investment.find({
+                loanId: loan._id,
+                status: 'pending' // Chờ giải ngân
+            });
+
+            for (const investment of investments) {
+                // Hoàn lại tiền bị đóng băng cho nhà đầu tư
+                await walletService.releaseFrozen(investment.investorId, investment.amount);
+
+                // Hủy investment
+                investment.status = 'cancelled';
+                investment.cancellationReason = 'Khoản vay bị hủy bởi người vay';
+                investment.completedAt = new Date();
+                await investment.save();
+
+                // Gửi thông báo cho nhà đầu tư
+                const Notification = require('../models/Notification');
+                await Notification.create({
+                    userId: investment.investorId,
+                    type: 'system',
+                    title: 'Đầu tư bị hủy',
+                    body: `Khoản vay bạn đầu tư (${loan._id}) đã bị hủy bởi người vay. Số tiền ${investment.amount.toLocaleString()} VND đã được hoàn lại vào ví.`,
+                    data: { investmentId: investment._id, type: 'loan_cancelled_by_borrower' }
+                });
+
+                logger.info(`[CancelLoan] Refunded ${investment.amount} to investor ${investment.investorId} due to loan cancellation`);
+            }
+        }
+
+        // Ghi blockchain nếu có contractId
+        if (loan.blockchainContractId) {
+            try {
+                await fabricService.updateLoanStatus(
+                    loan.blockchainContractId,
+                    'cancelled',
+                    { borrowerId, reason, cancelledAt: new Date().toISOString() }
+                );
+                logger.info(`[Blockchain] Đã cập nhật trạng thái hủy cho loan ${loan.blockchainContractId}`);
+            } catch (bcError) {
+                logger.error(`[Blockchain] Lỗi hủy loan: ${bcError.message}`);
+                throw new ValidationError(`Không thể hủy: Lỗi blockchain - ${bcError.message}`);
+            }
+        }
+
+        loan.status = LOAN_STATUS.CANCELLED;
+        loan.cancelledAt = new Date();
+        loan.cancellationReason = reason;
+        await loan.save();
+
+        logger.info(`Đã hủy khoản vay: ${loanId} bởi người vay ${borrowerId}`);
+
         return loan;
     }
 }
