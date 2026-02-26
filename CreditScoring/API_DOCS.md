@@ -152,3 +152,13 @@ curl -X POST http://localhost:8000/score \
 | `issue_date` | `ngay_phat_hanh_khoan_vay` |
 
 > **Note:** API now accepts BOTH English and Vietnamese field names. You can mix them in a single request.
+
+---
+
+## 6. Model Assumptions & Pipeline Logic
+
+### Adaptive Distribution Scaling
+Hệ thống AI Credit Scoring này sử dụng phương pháp **Adaptive Distribution Scaling** ngầm ở phía Backend để tránh sai lệch phân phối (Out-of-Distribution Data) khi áp dụng mô hình huấn luyện ở thị trường quốc tế vào Việt Nam:
+1. **Currency Exchange:** Thu nhập và khoản vay gửi lên qua API (bằng VND) sẽ được tự động chia cho tỷ giá cố định `USD_TO_VND = 26,500`. Tỷ giá này cố định thay vì real-time để đảm bảo tốc độ score model cao nhất và không phụ thuộc API thứ 3.
+2. **Distribution Matching:** Do mặt bằng tài chính ở VN và US là khác nhau, service sẽ tự động nhân các biến thu nhập (`annual_inc`, `tot_cur_bal`) với `income_scaling_factor = 5.0` và nhân các biến khoản vay (`loan_amnt`, `revol_bal`) với `loan_scaling_factor = 2.0` để hệ thống binning hoạt động chính xác theo phân phối chuẩn.
+*(Việc xử lý hoàn toàn khép kín trong `scoring_service.py`, Client Side không cần tác động thêm).*

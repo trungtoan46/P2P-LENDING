@@ -14,7 +14,7 @@ export const STORAGE_KEYS = {
 
 // API Base URL
 
-export const API_BASE_URL = "http://192.168.1.104:3000";
+export const API_BASE_URL = "https://api.ventop2p.site";
 
 // API Endpoints
 export const ENDPOINTS = {

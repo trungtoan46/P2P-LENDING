@@ -63,7 +63,8 @@ class LoanService {
     async createLoan(data) {
         const {
             borrowerId, capital, term, purpose, disbursementDate, monthlyIncome, annualIncome,
-            method, walletAccountNumber, bankName, bankAccountNumber, bankAccountHolderName
+            method, walletAccountNumber, bankName, bankAccountNumber, bankAccountHolderName,
+            interestRate: customInterestRate
         } = data;
 
         // Kiểm tra người vay có tồn tại không
@@ -112,7 +113,11 @@ class LoanService {
         let creditGrade = userDetails?.creditGrade || null;
 
         // Tính lãi suất tạm thời để gửi sang scoring
-        const preInterestRate = calculateInterestRate(creditScore, capital, term);
+        let preInterestRate = calculateInterestRate(creditScore, capital, term);
+        if (customInterestRate !== undefined && customInterestRate !== null) {
+            preInterestRate = Number(customInterestRate);
+            if (preInterestRate > 1) preInterestRate = preInterestRate / 100; // allow both 15 and 0.15 formats
+        }
         const annualIncomeForScoring = annualIncome
             ? Number(annualIncome)
             : monthlyIncome
@@ -159,7 +164,13 @@ class LoanService {
             logger.error(`[CreditScoring] Lỗi gọi API: ${scoringError.message}. Sử dụng điểm mặc định: ${creditScore}`);
         }
 
-        const interestRate = calculateInterestRate(creditScore, capital, term);
+        let interestRate;
+        if (customInterestRate !== undefined && customInterestRate !== null) {
+            interestRate = Number(customInterestRate);
+            if (interestRate > 1) interestRate = interestRate / 100;
+        } else {
+            interestRate = calculateInterestRate(creditScore, capital, term);
+        }
         const monthlyPayment = calculateMonthlyPayment(capital, interestRate, term);
         const totalInterest = calculateTotalInterest(capital, monthlyPayment, term);
         const totalRepayment = capital + totalInterest;

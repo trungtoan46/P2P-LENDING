@@ -37,23 +37,16 @@ export const AuthProvider = ({ children }) => {
             const token = await TokenManager.getAccessToken();
             if (token) {
                 const userInfo = await TokenManager.getUserInfo();
-                // console.log('[Auth] Loaded user from storage:', JSON.stringify(userInfo, null, 2));
-
-                if (normalizedUser) {
-                    // console.log('[Auth] Final user category:', normalizedUser.category);
-                    setUser(normalizedUser);
+                const validCategories = ['borrower', 'lender', 'both', 'admin'];
+                if (userInfo && validCategories.includes(userInfo.category)) {
+                    setUser(userInfo);
                     setIsLoggedIn(true);
-
-                    // Sync back to storage in clean format if changed
-                    if (JSON.stringify(normalizedUser) !== JSON.stringify(userInfo)) {
-                        await TokenManager.setUserInfo(normalizedUser);
-                    }
+                    await TokenManager.setUserInfo(userInfo);
                 } else {
-                    // console.log('[Auth] Invalid user info format, clearing storage');
+                    console.log('[Auth] Invalid user category:', userInfo?.category);
                     await TokenManager.clearTokens();
                 }
             } else {
-                // console.log('[Auth] No user info found, clearing tokens');
                 await TokenManager.clearTokens();
             }
         } catch (error) {

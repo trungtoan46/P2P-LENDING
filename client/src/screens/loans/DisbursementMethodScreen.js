@@ -23,7 +23,7 @@ import { LoansApi, TokenManager } from '../../api';
 
 const DisbursementMethodScreen = ({ navigation, route }) => {
     // Get loan info params passed from LoanPreview
-    const { capital, term, purpose, disbursementDate, monthlyIncome } = route.params || {};
+    const { capital, term, purpose, disbursementDate, monthlyIncome, customInterestRate } = route.params || {};
 
     // Validate params existence
     useEffect(() => {
@@ -163,6 +163,7 @@ const DisbursementMethodScreen = ({ navigation, route }) => {
                 purpose,
                 disbursementDate,
                 ...(monthlyIncome ? { monthlyIncome } : {}),
+                ...(customInterestRate !== undefined && customInterestRate !== null ? { interestRate: customInterestRate } : {}),
                 method,
                 ...(method === 'wallet' ? {
                     ...(walletAccountNumber ? { walletAccountNumber } : {})

@@ -26,10 +26,10 @@ const SERVICE_UNAVAILABLE_CODE = 503;
 
 // Financial Business Logic Constants
 const BASE_UNIT_PRICE = 50 * Math.pow(10, 4);        // 500,000 VND
-const CAPITAL_COEFFICIENT = 3 * Math.pow(10, -7);
+const CAPITAL_COEFFICIENT = 2 * Math.pow(10, -8);    // Tăng nhẹ lại trọng số Khoản vay
 const DEFAULT_CREDIT_SCORE = 580;
-const FACTOR_CONSTANT = 24;
-const FICO_COEFFICIENT = 0.015;
+const FACTOR_CONSTANT = 35;                          // Mở rộng mẫu số để làm mượt dải phân phối lãi suất
+const FICO_COEFFICIENT = 0.012;                      // Giảm nhẹ sức nặng của FICO
 const MONTH_COEFFICIENT = 1 / 12;
 const MAX_CAPITAL = 50 * Math.pow(10, 6);            // 50,000,000 VND
 const MIN_CAPITAL = 1 * Math.pow(10, 6);             // 1,000,000 VND
