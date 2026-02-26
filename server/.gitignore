@@ -1,0 +1,7 @@
+# Sensitive files
+.env
+.env.*
+wallet/
+wallets/
+organizations/
+/uploads/

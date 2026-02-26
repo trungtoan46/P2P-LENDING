@@ -1,0 +1,27 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+venv
+.env
+.venv
+pip-log.txt
+.tox
+.coverage
+.cache
+.pytest_cache
+.mypy_cache
+
+# Project specific
+legacy/
+logs/
+test_result.json
+scenarios_result.json
+*.md

@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  scoring_engine:
+    build: .
+    container_name: vn_scoring_api
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app # Hot reload logic (if running with flask debug)
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped

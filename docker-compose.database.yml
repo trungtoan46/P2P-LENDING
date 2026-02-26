@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: p2p-server-db-mode
+    ports:
+      - "5000:3000"
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+    env_file:
+      - ./server/.env
+    depends_on:
+      - mongodb
+    restart: unless-stopped
+    command: [ "npm", "run", "start:db" ]
+
+  mongodb:
+    image: mongo:4.4
+    container_name: p2p-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: DevP2PLending
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:

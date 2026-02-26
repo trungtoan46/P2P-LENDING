@@ -1,0 +1,27 @@
+config:
+  target: 'http://localhost:3000'
+  phases:
+    - duration: 30
+      arrivalRate: 10
+      name: "Warm up (10 users/sec)"
+    - duration: 60
+      arrivalRate: 10
+      rampTo: 100
+      name: "Ramp up to high load (10 to 100 users/sec)"
+    - duration: 60
+      arrivalRate: 100
+      name: "Sustained high load (100 users/sec)"
+  
+  # Ensure we don't hit local socket limits too fast
+  defaults:
+    headers:
+      Connection: 'keep-alive'
+
+scenarios:
+  - name: "Intense API Traffic (Health & Loans)"
+    flow:
+      - get:
+          url: "/health"
+      - think: 0.5
+      - get:
+          url: "/api/loans"

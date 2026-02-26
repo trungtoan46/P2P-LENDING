@@ -1,0 +1,35 @@
+services:
+  server:
+    build: ./server
+    command: npm start
+    ports:
+      - "127.0.0.1:3000:3000"
+    extra_hosts:
+      - "orderer.example.com:172.17.0.1"
+      - "peer0.org1.example.com:172.17.0.1"
+      - "peer0.org2.example.com:172.17.0.1"
+      - "ca.org1.example.com:172.17.0.1"
+      - "ca.org2.example.com:172.17.0.1"
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+    env_file:
+      - ./server/.env
+
+  admin-web:
+    build: ./admin-web
+    ports:
+      - "127.0.0.1:5173:80"
+    volumes:
+      - ./admin-web/.env:/app/.env:ro
+    env_file:
+      - ./admin-web/.env
+
+  explorer-web:
+    build: ./explorer-web
+    ports:
+      - "127.0.0.1:5174:80"
+    volumes:
+      - ./explorer-web/.env:/app/.env:ro
+    env_file:
+      - ./explorer-web/.env

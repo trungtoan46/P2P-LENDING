@@ -1,0 +1,19 @@
+config:
+  target: 'http://localhost:3000'
+  phases:
+    - duration: 5
+      arrivalRate: 5
+      rampTo: 20
+      name: "Ramp up load (5 to 20 users/sec)"
+    - duration: 15
+      arrivalRate: 20
+      name: "Sustained load (20 users/sec)"
+
+scenarios:
+  - name: "Health Check and Loan Listing"
+    flow:
+      - get:
+          url: "/health"
+      - think: 1
+      - get:
+          url: "/api/loans"

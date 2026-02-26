@@ -1,0 +1,10 @@
+pandas==2.0.0
+numpy==1.25.2
+seaborn==0.12.2
+matplotlib==3.7.2
+scikit-learn==1.7.2
+Flask==2.3.3
+pyarrow==14.0.1
+statsmodels==0.14.1
+#lightgbm==2.0.3
+gunicorn==21.2.0
