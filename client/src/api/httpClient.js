@@ -5,7 +5,7 @@
 import { API_BASE_URL, TokenManager } from './config';
 import { eventBus, EVENTS } from '../utils';
 
-const REQUEST_TIMEOUT = 15000;
+const REQUEST_TIMEOUT = 60000; // 60s cho eKYC liveness/face matching
 
 const fetchWithTimeout = (url, options, timeout = REQUEST_TIMEOUT) => {
     return new Promise((resolve, reject) => {

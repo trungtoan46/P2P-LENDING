@@ -101,7 +101,7 @@ class EkycController {
      */
     async verifyLiveness(req, res, next) {
         try {
-            const portraitPaths = req.files?.portraits?.map(f => f.path) || [];
+            const portraitPaths = req.files?.portraitImages?.map(f => f.path) || [];
             const frontIdPath = req.files?.frontID?.[0]?.path;
 
             if (portraitPaths.length === 0) {
@@ -134,11 +134,15 @@ class EkycController {
             const files = req.files || [];
 
             // Lọc theo fieldname
-            const portraitFiles = files.filter(f => f.fieldname === 'portraits');
-            const frontIdFile = files.find(f => f.fieldname === 'frontID');
-            const backIdFile = files.find(f => f.fieldname === 'backID');
+            logger.info(`[eKYC] processEkyc received fields: ${files.map(f => f.fieldname).join(', ')}`);
+            logger.info(`[eKYC] body keys: ${Object.keys(req.body).join(', ')}`);
 
-            const portraitBuffers = portraitFiles.map(f => f.buffer);
+            // Hỗ trợ cả mảng có index hoặc [] nếu React Native gửi thế
+            const portraitFiles = files.filter(f => f.fieldname.includes('portraitImages'));
+            const frontIdFile = files.find(f => f.fieldname.includes('frontID'));
+            const backIdFile = files.find(f => f.fieldname.includes('backID'));
+
+            let portraitBuffers = portraitFiles.map(f => f.buffer);
             const frontIdBuffer = frontIdFile?.buffer;
             const backIdBuffer = backIdFile?.buffer;
 
@@ -169,6 +173,15 @@ class EkycController {
                     ocrBackResult: ocrBackResult ? JSON.parse(ocrBackResult) : null
                 }
             );
+
+            if (!result.success) {
+                return res.status(400).json({
+                    success: false,
+                    message: result.message,
+                    data: result.data
+                });
+            }
+
             return successResponse(res, result.data, result.message);
         } catch (error) {
             logger.error('[eKYC] Process error:', error.message);

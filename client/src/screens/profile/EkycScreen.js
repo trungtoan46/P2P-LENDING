@@ -177,9 +177,10 @@ const EkycScreen = ({ navigation }) => {
         if (!cameraRef.current) return null;
         try {
             const photo = await cameraRef.current.takePictureAsync({
-                quality: 1, // Tăng lên max quality để AI detect tốt hơn
+                quality: 1, // Quality 1.0 cho ảnh KYC (theo EKYC guide)
                 base64: false,
                 skipProcessing: false, // Đảm bảo ảnh được xử lý đúng orientation
+                mirror: false, // Tắt mirror cho front camera
             });
             console.log('Photo taken:', photo.uri, 'width:', photo.width, 'height:', photo.height);
             return photo.uri;
@@ -336,7 +337,9 @@ const EkycScreen = ({ navigation }) => {
                 setEkycResult(response.data);
                 setStep(STEPS.RESULT);
             } else {
-                Alert.alert('Xác thực thất bại', response.message || 'Hệ thống không thể xác minh danh tính');
+                // Hiển thị thông báo lỗi cụ thể từ AI service nếu có
+                const errorMessage = response.data?.error || response.message || 'Hệ thống không thể xác minh danh tính';
+                Alert.alert('Xác thực thất bại', errorMessage);
                 setStep(STEPS.FACE_DETECTION);
                 setDetectionStatus('waiting');
             }

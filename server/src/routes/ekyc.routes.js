@@ -57,7 +57,7 @@ router.post('/detect-face',
 router.post('/liveness',
     authenticate,
     upload.fields([
-        { name: 'portraits', maxCount: 10 },
+        { name: 'portraitImages', maxCount: 10 },
         { name: 'frontID', maxCount: 1 }
     ]),
     (req, res, next) => ekycController.verifyLiveness(req, res, next)

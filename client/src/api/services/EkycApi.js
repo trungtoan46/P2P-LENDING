@@ -19,10 +19,11 @@ const EkycApi = {
      */
     async ocrFrontId(imageUri) {
         const formData = new FormData();
+        const filename = imageUri.split('/').pop() || 'frontID.jpg';
         formData.append('frontID', {
             uri: imageUri,
             type: 'image/jpeg',
-            name: 'frontID.jpg'
+            name: filename
         });
         return httpClient.upload(ENDPOINTS.EKYC.FRONT_ID, formData);
     },
@@ -33,10 +34,11 @@ const EkycApi = {
      */
     async ocrBackId(imageUri) {
         const formData = new FormData();
+        const filename = imageUri.split('/').pop() || 'backID.jpg';
         formData.append('backID', {
             uri: imageUri,
             type: 'image/jpeg',
-            name: 'backID.jpg'
+            name: filename
         });
         return httpClient.upload(ENDPOINTS.EKYC.BACK_ID, formData);
     },
@@ -48,10 +50,11 @@ const EkycApi = {
      */
     async detectFace(imageUri, expected) {
         const formData = new FormData();
+        const filename = imageUri.split('/').pop() || 'frame.jpg';
         formData.append('frame', {
             uri: imageUri,
             type: 'image/jpeg',
-            name: 'frame.jpg'
+            name: filename
         });
         formData.append('expected', expected);
         return httpClient.upload(ENDPOINTS.EKYC.DETECT_FACE, formData);
@@ -66,10 +69,11 @@ const EkycApi = {
         const formData = new FormData();
 
         portraitUris.forEach((uri, index) => {
-            formData.append('portraits', {
+            const filename = uri.split('/').pop() || `portrait_${index}.jpg`;
+            formData.append('portraitImages', {
                 uri: uri,
                 type: 'image/jpeg',
-                name: `portrait_${index}.jpg`
+                name: filename
             });
         });
 
@@ -96,10 +100,11 @@ const EkycApi = {
         const formData = new FormData();
 
         portraitUris.forEach((uri, index) => {
-            formData.append('portraits', {
+            const filename = uri.split('/').pop() || `portrait_${index}.jpg`;
+            formData.append('portraitImages', {
                 uri: uri,
                 type: 'image/jpeg',
-                name: `portrait_${index}.jpg`
+                name: filename
             });
         });
 

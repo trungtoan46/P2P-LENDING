@@ -11,7 +11,7 @@ const path = require('path');
 class EkycService {
     constructor() {
         this.baseUrl = process.env.EKYC_SERVICE_URL || 'http://localhost:8000';
-        this.timeout = 30000;
+        this.timeout = 60000; // 60s cho liveness/face matching (theo EKYC guide)
 
         // Axios instance với config mặc định
         this.client = axios.create({
@@ -143,69 +143,34 @@ class EkycService {
     async processFullEkyc(portraitBuffers, frontIdBuffer) {
         console.log(`[EkycService] Full eKYC - ${portraitBuffers.length} portraits`);
 
-        // Sử dụng sharp để fix EXIF orientation (camera iOS thường lưu orientation sai)
-        const sharp = require('sharp');
-        const processedPortraits = [];
-
-        for (let i = 0; i < portraitBuffers.length; i++) {
+        // DEBUG: Lưu ảnh gốc để kiểm tra
+        if (portraitBuffers.length > 0) {
+            const debugPath = path.join(__dirname, '../../uploads/ekyc/debug_portrait_original.jpg');
             try {
-                // Sharp auto-rotate sẽ đọc EXIF và xoay ảnh đúng hướng
-                const rotated = await sharp(portraitBuffers[i])
-                    .rotate() // Auto-rotate based on EXIF
-                    .jpeg({ quality: 95 })
-                    .toBuffer();
-                processedPortraits.push(rotated);
-                console.log(`[EkycService] Portrait ${i}: ${portraitBuffers[i].length} -> ${rotated.length} bytes (auto-rotated)`);
-            } catch (err) {
-                console.log(`[EkycService] Sharp error on portrait ${i}: ${err.message}, using original`);
-                processedPortraits.push(portraitBuffers[i]);
-            }
-        }
-
-        // DEBUG: Lưu ảnh đã xử lý để kiểm tra
-        if (processedPortraits.length > 0) {
-            const fs = require('fs');
-            const path = require('path');
-            const debugPath = path.join(__dirname, '../../uploads/ekyc/debug_portrait_rotated.jpg');
-            try {
-                fs.writeFileSync(debugPath, processedPortraits[0]);
-                console.log(`[EkycService] DEBUG - Saved rotated portrait to: ${debugPath}`);
+                fs.writeFileSync(debugPath, portraitBuffers[0]);
+                console.log(`[EkycService] DEBUG - Saved original portrait (${portraitBuffers[0].length} bytes) to: ${debugPath}`);
             } catch (err) {
                 console.log(`[EkycService] DEBUG - Could not save debug image: ${err.message}`);
             }
         }
 
-        let processedFrontId = frontIdBuffer;
-        if (frontIdBuffer && Buffer.isBuffer(frontIdBuffer) && frontIdBuffer.length > 0) {
-            try {
-                processedFrontId = await sharp(frontIdBuffer)
-                    .rotate()
-                    .jpeg({ quality: 95 })
-                    .toBuffer();
-                console.log(`[EkycService] FrontID: ${frontIdBuffer.length} -> ${processedFrontId.length} bytes (auto-rotated)`);
-            } catch (err) {
-                console.log(`[EkycService] Sharp error on frontID: ${err.message}`);
-                processedFrontId = frontIdBuffer;
-            }
-        } else {
-            console.log(`[EkycService] Warning: frontIdBuffer is invalid or empty:`, frontIdBuffer ? `size: ${frontIdBuffer.length}` : 'undefined');
-        }
-
         const formData = new FormData();
 
-        processedPortraits.forEach((buffer, index) => {
+        portraitBuffers.forEach((buffer, index) => {
             formData.append('portraitImages', buffer, {
                 filename: `portrait_${index}.jpg`,
                 contentType: 'image/jpeg'
             });
         });
 
-        formData.append('frontID', processedFrontId, {
+        formData.append('frontID', frontIdBuffer, {
             filename: 'frontID.jpg',
             contentType: 'image/jpeg'
         });
 
-        const result = await this._makeRequest('/api/ekyc-process', formData);
+        // Dùng /api/ekyc/liveness (hybrid liveness) thay vì /api/ekyc-process
+        // Vì liveness endpoint có face detection tốt hơn (MTCNN fallback) + anti-spoofing
+        const result = await this._makeRequest('/api/ekyc/liveness', formData);
         console.log('[EkycService] Full eKYC process completed');
         return result;
     }
