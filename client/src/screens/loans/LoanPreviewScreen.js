@@ -69,8 +69,8 @@ const LoanPreviewScreen = ({ navigation, route }) => {
 
     const handleConfirmRate = () => {
         const parsed = parseFloat(rateInput);
-        if (isNaN(parsed) || parsed < 1 || parsed > 100) {
-            Alert.alert('Lỗi', 'Lãi suất phải nằm trong khoảng 1% đến 100%');
+        if (isNaN(parsed) || parsed < 1 || parsed > 20) {
+            Alert.alert('Lỗi', 'Lãi suất phải nằm trong khoảng 1% đến 20%');
             return;
         }
         const rounded = Math.round(parsed * 100) / 100; // 2 decimal places
@@ -310,7 +310,17 @@ const LoanPreviewScreen = ({ navigation, route }) => {
                                 <Text style={styles.rateInputUnit}>%/năm</Text>
                             </View>
                         </View>
-                        <Text style={styles.rateRangeHint}>Phạm vi cho phép: 1% - 30%</Text>
+                        <Text style={styles.rateRangeHint}>Phạm vi cho phép: 1% - 20%</Text>
+
+                        {/* Cảnh báo khi lãi suất thấp */}
+                        {parseFloat(rateInput) > 0 && parseFloat(rateInput) < 10 && (
+                            <View style={styles.lowRateWarning}>
+                                <MaterialCommunityIcons name="alert-outline" size={16} color="#d97706" />
+                                <Text style={styles.lowRateWarningText}>
+                                    Lãi suất dưới 10% có thể khó thu hút nhà đầu tư, khoản vay sẽ mất nhiều thời gian hơn để gọi đủ vốn.
+                                </Text>
+                            </View>
+                        )}
 
                         {/* Buttons */}
                         <View style={styles.rateModalButtons}>
@@ -654,7 +664,25 @@ const styles = StyleSheet.create({
         fontSize: 11,
         color: Colors.textDisabled,
         textAlign: 'center',
-        marginBottom: 20,
+        marginBottom: 8,
+    },
+    lowRateWarning: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        backgroundColor: '#fffbeb',
+        borderWidth: 1,
+        borderColor: '#f59e0b',
+        borderRadius: 8,
+        paddingHorizontal: 10,
+        paddingVertical: 8,
+        marginBottom: 16,
+    },
+    lowRateWarningText: {
+        fontSize: 12,
+        color: '#92400e',
+        marginLeft: 6,
+        flex: 1,
+        lineHeight: 17,
     },
     rateModalButtons: {
         flexDirection: 'row',

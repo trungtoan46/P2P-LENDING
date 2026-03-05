@@ -109,10 +109,10 @@ const createLoanSchema = Joi.object({
     walletAccountNumber: Joi.string().optional().allow(null, ''),
     bankAccountNumber: Joi.string().optional().allow(null, ''),
     bankAccountHolderName: Joi.string().optional().allow(null, ''),
-    interestRate: Joi.number().min(0).max(100).optional()
+    interestRate: Joi.number().min(1).max(20).optional()
         .messages({
-            'number.min': 'Interest rate cannot be negative',
-            'number.max': 'Interest rate cannot exceed 100%'
+            'number.min': 'Interest rate cannot be below 1%',
+            'number.max': 'Interest rate cannot exceed 20%'
         })
 });
 

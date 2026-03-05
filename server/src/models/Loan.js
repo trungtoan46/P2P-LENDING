@@ -30,8 +30,8 @@ const loanSchema = new mongoose.Schema({
     interestRate: {
         type: Number,
         required: true,
-        min: [0.05, 'Interest rate cannot be below 5%'],
-        max: [0.30, 'Interest rate cannot exceed 30%']
+        min: [0.01, 'Interest rate cannot be below 1%'],
+        max: [0.20, 'Interest rate cannot exceed 20%']
     },
 
     purpose: {
