@@ -4,7 +4,6 @@
 
 const Investment = require('../models/Investment');
 const Loan = require('../models/Loan');
-const WaitingRoom = require('../models/WaitingRoom');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const walletService = require('./wallet.service');
@@ -32,105 +31,6 @@ class InvestmentService {
         }
         return investmentObj;
     }
-    /**
-     * Tạo đầu tư từ phòng chờ (khi khớp lệnh tự động)
-     * @param {String} waitingRoomId - ID phòng chờ
-     * @param {String} loanId - ID khoản vay để đầu tư
-     * @returns {Object} Đầu tư đã tạo
-     */
-    async createInvestmentFromWaitingRoom(waitingRoomId, loanId) {
-        // Tìm phòng chờ
-        const waitingRoom = await WaitingRoom.findById(waitingRoomId);
-        if (!waitingRoom) {
-            throw new NotFoundError('Không tìm thấy phòng chờ');
-        }
-
-        // Kiểm tra phòng chờ còn đang chờ không
-        if (waitingRoom.status !== 'waiting') {
-            throw new ValidationError('Phòng chờ không còn khả dụng để khớp lệnh');
-        }
-
-        // Tìm khoản vay
-        const loan = await Loan.findById(loanId);
-        if (!loan) {
-            throw new NotFoundError('Không tìm thấy khoản vay');
-        }
-
-        // Kiểm tra khoản vay đã được duyệt chưa
-        if (loan.status !== LOAN_STATUS.APPROVED) {
-            throw new ValidationError('Khoản vay chưa sẵn sàng để đầu tư');
-        }
-
-        const remainingNotes = loan.totalNotes - loan.investedNotes;
-        if (remainingNotes < waitingRoom.notes) {
-            throw new ValidationError('Khoản vay không còn đủ notes để đầu tư');
-        }
-
-        const returns = calculateInvestmentReturns(waitingRoom.amount, loan.interestRate, loan.term);
-
-        // Tạo referenceId unique để link transaction với investment
-        const referenceId = `inv_${Date.now()}_${generateRandomString(8)}`;
-
-        // Tạo investment trước để đảm bảo có record trước khi deduct
-        const investment = await Investment.create({
-            investorId: waitingRoom.investorId,
-            loanId: loan._id,
-            amount: waitingRoom.amount,
-            notes: waitingRoom.notes,
-            status: INVESTMENT_STATUS.PENDING,
-            monthlyReturn: returns.monthlyReturn,
-            totalReturn: returns.totalReturn,
-            grossProfit: returns.grossProfit,
-            netProfit: returns.netProfit,
-            serviceFee: returns.serviceFee,
-            matchedAt: new Date()
-        });
-
-        try {
-            // Trừ tiền sau khi đã có investment
-            await walletService.deduct(
-                waitingRoom.investorId,
-                waitingRoom.amount,
-                `Đầu tư vào khoản vay ${loan._id}`,
-                loan._id,
-                investment._id,
-                referenceId
-            );
-
-            // Cập nhật transaction với investmentId (đã có sẵn từ deduct)
-            const updated = await Transaction.findOneAndUpdate(
-                { referenceId },
-                { investmentId: investment._id }
-            );
-
-            if (!updated) {
-                throw new ValidationError('Lỗi khi liên kết transaction với investment');
-            }
-
-            // Cập nhật waiting room và loan
-            waitingRoom.status = 'matched';
-            waitingRoom.matchedAt = new Date();
-            await waitingRoom.save();
-
-            loan.investedNotes += waitingRoom.notes;
-            if (loan.investedNotes >= loan.totalNotes) {
-                loan.status = LOAN_STATUS.WAITING_SIGNATURE;
-                // Gui thong bao cho borrower de ky hop dong
-                await notificationService.notifyLoanFunded(loan);
-            }
-            await loan.save();
-
-            logger.info(`Đã tạo đầu tư: ${investment._id} cho khoản vay ${loanId}`);
-
-            return investment;
-        } catch (error) {
-            // Rollback: xóa investment và transaction nếu có
-            await Investment.findByIdAndDelete(investment._id);
-            await Transaction.findOneAndDelete({ referenceId });
-            throw error;
-        }
-    }
-
     /**
      * Tạo đầu tư từ AutoInvest (Matching Service gọi)
      * @param {Object} autoInvest - Document AutoInvest (đã matched)

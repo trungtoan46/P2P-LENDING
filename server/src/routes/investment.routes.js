@@ -10,6 +10,13 @@ const { validateBody, validateQuery } = require('../middlewares/validation.middl
 const { createInvestmentSchema, paginationSchema } = require('../utils/validators');
 const Joi = require('joi');
 
+// Admin route - List all investments
+router.get('/',
+    authenticate,
+    isAdmin,
+    (req, res, next) => investmentController.getAllInvestments(req, res, next)
+);
+
 // Protected routes - Lender
 router.post('/',
     authenticate,

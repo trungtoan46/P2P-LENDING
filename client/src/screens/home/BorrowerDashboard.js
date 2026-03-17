@@ -32,7 +32,7 @@ const KYC_STATUS = {
 };
 
 const BorrowerDashboard = ({ navigation }) => {
-    const { user } = useAuth();
+    const { user, refreshProfile } = useAuth();
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [loans, setLoans] = useState([]);
@@ -42,6 +42,7 @@ const BorrowerDashboard = ({ navigation }) => {
     const [errorMessage, setErrorMessage] = useState('');
 
     useEffect(() => {
+        refreshProfile();
         loadDashboardData();
     }, []);
 
@@ -132,7 +133,8 @@ const BorrowerDashboard = ({ navigation }) => {
     if (loading) return <Loading fullScreen />;
 
     // Sử dụng kycStatus trực tiếp từ details
-    const kycInfo = KYC_STATUS[user?.details?.kycStatus] || KYC_STATUS.pending;
+    const kycStatus = user?.details?.kycStatus;
+    const kycInfo = KYC_STATUS[kycStatus] || { label: 'Chưa xác thực', color: '#6B7280' };
     // Financial calculations from REAL data
     const activeLoans = loans.filter(loan => loan.status === 'active' || loan.status === 'success');
     const totalDebt = activeLoans.reduce((sum, loan) => sum + (loan.remainingAmount || 0), 0);

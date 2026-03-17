@@ -1,4 +1,5 @@
-import { httpClient, ENDPOINTS } from '../index';
+import httpClient from '../httpClient';
+import { ENDPOINTS } from '../config';
 
 export const AutoInvestApi = {
     /**

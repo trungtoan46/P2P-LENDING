@@ -36,14 +36,33 @@ export const AuthProvider = ({ children }) => {
         try {
             const token = await TokenManager.getAccessToken();
             if (token) {
-                const userInfo = await TokenManager.getUserInfo();
+                let userInfo = await TokenManager.getUserInfo();
                 const validCategories = ['borrower', 'lender', 'both', 'admin'];
+
+                // Nếu category không hợp lệ, thử fetch profile mới từ server
+                if (!userInfo || !validCategories.includes(userInfo.category)) {
+                    console.log('[Auth] Stored category invalid, refreshing from server...');
+                    try {
+                        const response = await UserApi.getProfile();
+                        if (response.success && response.data) {
+                            const responseData = response.data.data;
+                            const userData = responseData?.user;
+                            const details = responseData?.details;
+                            if (userData && validCategories.includes(userData.category)) {
+                                userInfo = { ...userData, details: details || null };
+                                await TokenManager.setUserInfo(userInfo);
+                            }
+                        }
+                    } catch (refreshErr) {
+                        console.log('[Auth] Failed to refresh profile:', refreshErr);
+                    }
+                }
+
                 if (userInfo && validCategories.includes(userInfo.category)) {
                     setUser(userInfo);
                     setIsLoggedIn(true);
-                    await TokenManager.setUserInfo(userInfo);
                 } else {
-                    console.log('[Auth] Invalid user category:', userInfo?.category);
+                    console.log('[Auth] Invalid user category after refresh:', userInfo?.category);
                     await TokenManager.clearTokens();
                 }
             } else {

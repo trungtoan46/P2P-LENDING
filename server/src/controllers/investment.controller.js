@@ -4,10 +4,36 @@
 
 const investmentService = require('../services/investment.service');
 const matchingService = require('../services/matching.service');
+const Investment = require('../models/Investment');
 const { successResponse, paginatedResponse } = require('../utils/response');
 const { CREATED_CODE } = require('../constants');
 
 class InvestmentController {
+    /**
+     * Admin: Get all investments
+     * GET /api/investments
+     */
+    async getAllInvestments(req, res, next) {
+        try {
+            const { page = 1, limit = 50, status } = req.query;
+            const query = {};
+            if (status) query.status = status;
+            const skip = (Number(page) - 1) * Number(limit);
+            const [investments, total] = await Promise.all([
+                Investment.find(query)
+                    .populate('investorId', 'phone category')
+                    .populate('loanId', 'capital term interestRate purpose status')
+                    .sort({ createdAt: -1 })
+                    .skip(skip)
+                    .limit(Number(limit)),
+                Investment.countDocuments(query),
+            ]);
+            return paginatedResponse(res, investments, page, limit, total, 'All investments retrieved');
+        } catch (error) {
+            next(error);
+        }
+    }
+
     /**
      * Create direct investment
      * POST /api/investments

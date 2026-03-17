@@ -366,16 +366,12 @@ class LoanService {
             if (loan.borrowerId._id.toString() !== userId) {
                 const user = await User.findById(userId);
                 if (!user || user.category !== 'admin') {
-                    // Check if user is an investor or has waiting room
+                    // Check if user is an investor
                     const Investment = require('../models/Investment');
-                    const WaitingRoom = require('../models/WaitingRoom');
 
-                    const [hasInvestment, hasWaitingRoom] = await Promise.all([
-                        Investment.exists({ loanId: loan._id, investorId: userId }),
-                        WaitingRoom.exists({ loanId: loan._id, userId: userId })
-                    ]);
+                    const hasInvestment = await Investment.exists({ loanId: loan._id, investorId: userId });
 
-                    if (!hasInvestment && !hasWaitingRoom) {
+                    if (!hasInvestment) {
                         throw new ValidationError('Không có quyền xem khoản vay này');
                     }
                 }

@@ -96,8 +96,8 @@ const LoanConfigPage: React.FC = () => {
         setSaving(true);
         try {
             await Promise.all([
-                api.put('/config/loan_approval_mode', { value: approval }),
-                api.put('/config/loan_disbursement_mode', { value: disbursement }),
+                api.put('/configs/loan_approval_mode', { value: approval }),
+                api.put('/configs/loan_disbursement_mode', { value: disbursement }),
             ]);
             message.success('Đã lưu cấu hình thành công!');
         } catch (err) {
