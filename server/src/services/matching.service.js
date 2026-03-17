@@ -1,19 +1,10 @@
 /**
- * Service khớp lệnh tự động - Auto-Invest Matching Engine
- * Ghép các khoản đầu tư từ nhà đầu tư với các khoản vay phù hợp dựa trên tiêu chí đã định
- * 
- * Cơ chế hoạt động:
- * 1. Nhà đầu tư tạo Waiting Room (AutoInvest config) với các tiêu chí:
- *    - Khoảng lãi suất (interestRange)
- *    - Khoảng kỳ hạn (periodRange)
- *    - Mục đích vay (purpose)
- *    - Số vốn cam kết (capital)
- * 2. Khi khoản vay được approve, system tự động scan các AutoInvest phù hợp
- * 3. Khớp theo priority: Score DESC → FIFO (createdAt ASC)
+ * Service khớp lệnh - Hỗ trợ cả Manual Matching (WaitingRoom) và Auto-Invest Strategy
  */
 
 const mongoose = require('mongoose');
 const Loan = require('../models/Loan');
+const WaitingRoom = require('../models/WaitingRoom');
 const AutoInvest = require('../models/AutoInvest');
 const investmentService = require('./investment.service');
 const { LOAN_STATUS, BASE_UNIT_PRICE } = require('../constants');
@@ -23,11 +14,84 @@ const { normalizeVietnameseString, tokenize, getBigrams } = require('../utils/st
 class MatchingService {
 
     // ============================================
-    // AUTO-INVEST MATCHING (CRITERIA BASED)
+    // MANUAL MATCHING (WAITING ROOM - AUTO QUEUE)
     // ============================================
 
     /**
-     * Tìm các Auto-Invest phù hợp với khoản vay
+     * Tìm các phòng chờ (Manual Queue) phù hợp với khoản vay
+     * @param {String} loanId - ID khoản vay
+     * @returns {Array} Danh sách phòng chờ phù hợp
+     */
+    async findMatchingRooms(loanId) {
+        const loan = await Loan.findById(loanId);
+
+        if (!loan || loan.status !== LOAN_STATUS.APPROVED) {
+            return [];
+        }
+
+        const remainingNotes = loan.totalNotes - loan.investedNotes;
+        if (remainingNotes <= 0) {
+            return [];
+        }
+
+        // Tìm các phòng chờ phù hợp (Manual Queue cho Loan cụ thể)
+        const waitingRooms = await WaitingRoom.find({
+            loanId: loanId, // Match đích danh loan
+            status: 'waiting',
+            amount: { $lte: loan.capital }, // Logic cũ: amount <= loan.capital. Có thể cần sửa lại nếu cho phép partial.
+            // Nhưng hiện tại giữ nguyên logic cũ của server hiện tại
+            expiresAt: { $gt: new Date() },
+            notes: { $lte: remainingNotes }
+        })
+            .sort({ priority: -1, createdAt: 1 })
+            .limit(50);
+
+        return waitingRooms;
+    }
+
+    /**
+     * Thực hiện khớp lệnh Manual Queue
+     * @param {Object} loan - Document Loan
+     * @returns {Object} Kết quả khớp
+     */
+    async performManualMatching(loan) {
+        const matchingRooms = await this.findMatchingRooms(loan._id);
+        if (matchingRooms.length === 0) {
+            return { matched: 0, message: 'Không tìm thấy phòng chờ thủ công phù hợp' };
+        }
+
+        let matchedCount = 0;
+        let matchedNotes = 0;
+        let notesToMatch = loan.totalNotes - loan.investedNotes;
+
+        for (const room of matchingRooms) {
+            if (notesToMatch <= 0) break;
+
+            // Logic hiện tại: Chỉ khớp nếu room.notes <= notesToMatch
+            // Nếu room.notes > notesToMatch thì skip (không partial match cho manual queue?)
+            // Để an toàn, giữ nguyên logic cũ.
+            if (room.notes > notesToMatch) continue;
+
+            try {
+                await investmentService.createInvestmentFromWaitingRoom(room._id, loan._id);
+                matchedCount++;
+                matchedNotes += room.notes;
+                notesToMatch -= room.notes;
+                logger.info(`[Manual Match] Phòng chờ ${room._id} -> Khoản vay ${loan._id}`);
+            } catch (error) {
+                logger.error(`[Manual Match] Lỗi khớp phòng ${room._id}:`, error);
+            }
+        }
+
+        return { matched: matchedCount, matchedNotes, message: `Đã khớp thủ công ${matchedCount} phòng chờ` };
+    }
+
+    // ============================================
+    // AUTO-INVEST MATCHING (STRATEGY BASED)
+    // ============================================
+
+    /**
+     * Tìm các gói Auto-Invest phù hợp
      * @param {Object} loan - Loan Document
      * @returns {Array} Danh sách AutoInvest qualified (đã sort theo Score & Priority)
      */
@@ -61,24 +125,29 @@ class MatchingService {
 
         const qualified = candidates.map(ai => {
             // Check Max Capital Per Loan rule
-            // Nếu đã invest vào loan này rồi → Skip
+            // Nếu đã invest vào loan này rồi -> Skip (hoặc check quota xem còn invest thêm được không?)
+            // Giả định: Mỗi AutoInvest chỉ invest 1 lần vào 1 Loan để đơn giản hóa.
             const existingInvestment = ai.loans.find(l => l.loanId && l.loanId.toString() === loan._id.toString());
             if (existingInvestment) {
+                // Nếu đã invest rồi, ta tạm thời skip để tránh double spending hoặc phức tạp logic
                 return { ai, score: -1 };
             }
 
             // Check Max Capital Per Loan limit
+            // Số tiền tối đa được phép invest vào loan này
             const maxInvestAmount = ai.maxCapitalPerLoan || ai.capital;
+            // Số nodes tối đa
             const maxNodes = Math.floor(maxInvestAmount / BASE_UNIT_PRICE);
 
+            // Nếu maxNodes <= 0 -> Skip
             if (maxNodes <= 0) return { ai, score: -1 };
 
-            // Scoring Purpose (NLP-based)
+            // Scoring Purpose
             let score = 0;
             const aiPurposes = ai.purpose || [];
 
             if (aiPurposes.length === 0) {
-                // Nếu không set purpose → Chấp nhận mọi purpose (Low priority)
+                // Nếu không set purpose -> Chấp nhận mọi purpose (Low priority)
                 score = 50;
             } else {
                 let highestScore = 0;
@@ -101,9 +170,9 @@ class MatchingService {
             }
 
             return { ai, score, maxNodesLimit: maxNodes };
-        }).filter(item => item.score > 0);
+        }).filter(item => item.score > 0); // Chỉ lấy score > 0 (score -1 là bị loại)
 
-        // 3. Sort: Score DESC → CreatedAt ASC (FIFO)
+        // 3. Sort: Score DESC -> CreatedAt ASC (FIFO)
         qualified.sort((a, b) => {
             if (b.score !== a.score) return b.score - a.score;
             return new Date(a.ai.createdAt) - new Date(b.ai.createdAt);
@@ -114,6 +183,7 @@ class MatchingService {
 
     /**
      * Thực hiện khớp lệnh Auto-Invest cho Loan
+     * Flow: Tìm AutoInvest phù hợp → Tạo WaitingRoom (phòng chờ) → Xử lý WaitingRoom → Tạo Investment
      * @param {Object} loan - Loan document
      * @returns {Object} Result
      */
@@ -135,12 +205,8 @@ class MatchingService {
             const { ai, maxNodesLimit } = item;
 
             // Tính số nodes có thể match từ AutoInvest này
-            // 1. Available nodes của AI
             const aiAvailableNodes = ai.totalNodes - ai.matchedNodes;
-            // 2. Limit per loan
             const limitPerLoan = maxNodesLimit;
-            // 3. Nhu cầu của Loan
-
             const matchNodes = Math.min(notesToMatch, aiAvailableNodes, limitPerLoan);
 
             if (matchNodes <= 0) continue;
@@ -148,8 +214,7 @@ class MatchingService {
             const matchAmount = matchNodes * BASE_UNIT_PRICE;
 
             try {
-                // ATOMIC UPDATE AutoInvest
-                // Phải đảm bảo vẫn còn đủ quota
+                // BƯỚC 1: ATOMIC UPDATE AutoInvest - Đảm bảo vẫn còn đủ quota
                 const updatedAi = await AutoInvest.findOneAndUpdate(
                     {
                         _id: ai._id,
@@ -176,10 +241,36 @@ class MatchingService {
                     continue;
                 }
 
-                // Tạo Investment & Trừ tiền
-                // Nếu thất bại → Phải Rollback AutoInvest
+                // BƯỚC 2: Tạo Phòng chờ (WaitingRoom) - Bước trung gian giữ chỗ
+                let waitingRoom;
                 try {
-                    await investmentService.createAutoInvestment(updatedAi, loan, matchAmount, matchNodes);
+                    waitingRoom = await WaitingRoom.create({
+                        loanId: loan._id,
+                        investorId: ai.investorId,
+                        autoInvestId: ai._id,
+                        source: 'auto',
+                        amount: matchAmount,
+                        notes: matchNodes,
+                        status: 'waiting',
+                        priority: 0,
+                        expiresAt: new Date(Date.now() + 60 * 60 * 1000) // 1 giờ
+                    });
+
+                    logger.info(`[Auto Match] Tạo phòng chờ ${waitingRoom._id} cho AI ${ai._id} → Loan ${loan._id}`);
+
+                } catch (roomError) {
+                    logger.error(`[Auto Match] Tạo phòng chờ thất bại: ${roomError.message}. Rolling back AutoInvest ${ai._id}`);
+                    // Rollback AutoInvest
+                    await AutoInvest.findByIdAndUpdate(ai._id, {
+                        $inc: { matchedNodes: -matchNodes, matchedCapital: -matchAmount },
+                        $pull: { loans: { loanId: loan._id } }
+                    });
+                    continue;
+                }
+
+                // BƯỚC 3: Xử lý phòng chờ → Tạo Investment & Trừ tiền
+                try {
+                    await investmentService.createInvestmentFromWaitingRoom(waitingRoom._id, loan._id);
 
                     totalMatchedNotes += matchNodes;
                     notesToMatch -= matchNodes;
@@ -189,10 +280,17 @@ class MatchingService {
                         await AutoInvest.findByIdAndUpdate(updatedAi._id, { status: 'completed', completedAt: new Date() });
                     }
 
-                    logger.info(`[Auto Match] Success: AI ${ai._id} matched ${matchNodes} notes (${matchAmount} VND)`);
+                    logger.info(`[Auto Match] Thành công: AI ${ai._id} → Phòng chờ ${waitingRoom._id} → ${matchNodes} notes (${matchAmount} VND)`);
 
                 } catch (invError) {
-                    logger.error(`[Auto Match] Create Investment Failed: ${invError.message}. Rolling back AutoInvest ${ai._id}`);
+                    logger.error(`[Auto Match] Xử lý phòng chờ thất bại: ${invError.message}. Rolling back.`);
+
+                    // Rollback WaitingRoom
+                    await WaitingRoom.findByIdAndUpdate(waitingRoom._id, {
+                        status: 'cancelled',
+                        cancelledAt: new Date(),
+                        cancellationReason: `Auto-match failed: ${invError.message}`
+                    });
 
                     // Rollback AutoInvest
                     await AutoInvest.findByIdAndUpdate(ai._id, {
@@ -214,7 +312,7 @@ class MatchingService {
     // ============================================
 
     /**
-     * Thực hiện khớp lệnh tự động cho Loan
+     * Thực hiện khớp lệnh toàn diện (Manual trước -> Auto sau)
      * @param {String} loanId - ID khoản vay
      * @returns {Object} Kết quả khớp lệnh
      */
@@ -224,19 +322,44 @@ class MatchingService {
             return { matched: 0, message: 'Khoản vay chưa sẵn sàng' };
         }
 
-        logger.info(`--- Bắt đầu Auto-Invest Matching cho Loan ${loanId} ---`);
+        logger.info(`--- Bắt đầu khớp lệnh cho Loan ${loanId} ---`);
 
-        // Auto-Invest Matching (100% tự động)
-        const autoResult = await this.performAutoMatching(loan);
+        // 1. Manual Matching
+        const manualResult = await this.performManualMatching(loan);
 
-        logger.info(`--- Kết thúc Auto-Invest Matching ---`);
+        // Refresh Loan state after manual match
+        const refreshedLoan = await Loan.findById(loanId);
+        if (refreshedLoan.investedNotes >= refreshedLoan.totalNotes) {
+            logger.info(`Done: Khoản vay đã được fill đầy bởi lệnh thủ công.`);
+            return {
+                success: true,
+                manualMatch: manualResult,
+                autoMatch: { matched: 0 },
+                message: 'Khoản vay đã được lấp đầy (Manual)'
+            };
+        }
+
+        // 2. Auto Matching (Lấp đầy phần còn thiếu)
+        const autoResult = await this.performAutoMatching(refreshedLoan);
+
+        logger.info(`--- Kết thúc khớp lệnh ---`);
+
+        const totalMatched = (manualResult.matchedNotes || 0) + (autoResult.matched || 0);
 
         return {
             success: true,
+            manualMatch: manualResult,
             autoMatch: autoResult,
-            totalMatchedNotes: autoResult.matched || 0,
-            message: `Khớp lệnh hoàn tất. Tổng: ${autoResult.matched || 0} notes.`
+            totalMatchedNotes: totalMatched,
+            message: `Khớp lệnh hoàn tất. Tổng: ${totalMatched} notes.`
         };
+    }
+
+    /**
+     * Khớp một phòng chờ cụ thể với khoản vay (Dành cho Manual Trigger từ Admin/User)
+     */
+    async matchWaitingRoomWithLoan(waitingRoomId, loanId) {
+        return await investmentService.createInvestmentFromWaitingRoom(waitingRoomId, loanId);
     }
 }
 

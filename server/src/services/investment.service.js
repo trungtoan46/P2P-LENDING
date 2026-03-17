@@ -6,6 +6,7 @@ const Investment = require('../models/Investment');
 const Loan = require('../models/Loan');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
+const WaitingRoom = require('../models/WaitingRoom');
 const walletService = require('./wallet.service');
 const fabricService = require('../external/FabricService');
 const { calculateInvestmentReturns, calculateNotes, generateRandomString } = require('../utils/helpers');
@@ -324,6 +325,88 @@ class InvestmentService {
 
         logger.info(`Investment confirmed by user: ${investment._id}`);
         return investment;
+    }
+
+    /**
+     * Tạo đầu tư từ Phòng chờ (WaitingRoom) - Dùng cho cả Manual và Auto Invest
+     * @param {String} waitingRoomId - ID phòng chờ
+     * @param {String} loanId - ID khoản vay
+     * @returns {Object} Investment created
+     */
+    async createInvestmentFromWaitingRoom(waitingRoomId, loanId) {
+        const room = await WaitingRoom.findById(waitingRoomId);
+        if (!room) throw new NotFoundError('Không tìm thấy phòng chờ');
+        if (room.status !== 'waiting') throw new ValidationError('Phòng chờ không ở trạng thái chờ');
+
+        const loan = await Loan.findById(loanId);
+        if (!loan) throw new NotFoundError('Không tìm thấy khoản vay');
+        if (loan.status !== LOAN_STATUS.APPROVED) throw new ValidationError('Khoản vay chưa sẵn sàng');
+
+        const remainingNotes = loan.totalNotes - loan.investedNotes;
+        if (room.notes > remainingNotes) throw new ValidationError('Khoản vay không còn đủ notes');
+
+        const amount = room.amount;
+        const notes = room.notes;
+        const returns = calculateInvestmentReturns(amount, loan.interestRate, loan.term);
+        const referenceId = `wr_${Date.now()}_${generateRandomString(8)}`;
+
+        // Tạo Investment
+        const investment = await Investment.create({
+            investorId: room.investorId,
+            loanId: loan._id,
+            amount,
+            notes,
+            status: INVESTMENT_STATUS.PENDING,
+            monthlyReturn: returns.monthlyReturn,
+            totalReturn: returns.totalReturn,
+            grossProfit: returns.grossProfit,
+            netProfit: returns.netProfit,
+            serviceFee: returns.serviceFee,
+            matchedAt: new Date(),
+            autoInvestId: room.autoInvestId || null
+        });
+
+        try {
+            // Trừ tiền từ ví
+            await walletService.deduct(
+                room.investorId,
+                amount,
+                room.source === 'auto'
+                    ? `Đầu tư tự động vào khoản vay ${loan._id}`
+                    : `Đầu tư thủ công vào khoản vay ${loan._id}`,
+                loan._id,
+                investment._id,
+                referenceId
+            );
+
+            // Cập nhật transaction
+            await Transaction.findOneAndUpdate(
+                { referenceId },
+                { investmentId: investment._id }
+            );
+
+            // Cập nhật WaitingRoom → matched
+            room.status = 'matched';
+            room.loanId = loan._id;
+            room.matchedAt = new Date();
+            await room.save();
+
+            // Cập nhật loan invested notes
+            loan.investedNotes += notes;
+            if (loan.investedNotes >= loan.totalNotes) {
+                loan.status = LOAN_STATUS.WAITING_SIGNATURE;
+                await notificationService.notifyLoanFunded(loan);
+            }
+            await loan.save();
+
+            logger.info(`[WaitingRoom] Investment created from room ${waitingRoomId} → Investment ${investment._id} for loan ${loanId}`);
+            return investment;
+
+        } catch (error) {
+            logger.error(`[WaitingRoom] Investment failed, rolling back: ${error.message}`);
+            await Investment.findByIdAndDelete(investment._id);
+            throw error;
+        }
     }
 }
 

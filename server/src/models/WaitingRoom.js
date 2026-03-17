@@ -8,8 +8,22 @@ const waitingRoomSchema = new mongoose.Schema({
     loanId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Loan',
-        required: true,
+        required: false,
+        default: null,
         index: true
+    },
+
+    autoInvestId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'AutoInvest',
+        default: null,
+        index: true
+    },
+
+    source: {
+        type: String,
+        enum: ['manual', 'auto'],
+        default: 'manual'
     },
 
     investorId: {

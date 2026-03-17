@@ -31,7 +31,7 @@ const WaitingRoomScreen = ({ navigation }) => {
             let allItems = [];
 
             if (roomsResult.success && roomsResult.data?.data && Array.isArray(roomsResult.data.data)) {
-                allItems = [...allItems, ...roomsResult.data.data.map(r => ({ ...r, type: 'manual' }))];
+                allItems = [...allItems, ...roomsResult.data.data.map(r => ({ ...r, type: r.source === 'auto' ? 'auto' : 'manual' }))];
             }
 
             const investmentsData = investmentsResult.data?.data;
@@ -85,7 +85,7 @@ const WaitingRoomScreen = ({ navigation }) => {
     };
 
     const renderItem = ({ item }) => {
-        const isAuto = item.autoInvestId || (item.type === 'investment' && item.status === 'matched');
+        const isAuto = item.source === 'auto' || item.autoInvestId || (item.type === 'auto');
 
         return (
             <TouchableOpacity
@@ -181,7 +181,7 @@ const WaitingRoomScreen = ({ navigation }) => {
     const getFilteredData = () => {
         if (activeTab === 'all') return rooms;
         if (activeTab === 'manual') return rooms.filter(r => r.type === 'manual');
-        if (activeTab === 'auto') return rooms.filter(r => r.type === 'investment' && r.autoInvestId);
+        if (activeTab === 'auto') return rooms.filter(r => r.type === 'auto' || r.autoInvestId);
         return rooms;
     };
 
