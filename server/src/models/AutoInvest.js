@@ -1,6 +1,6 @@
 /**
- * @description AutoInvest Model - Cấu hình đầu tư tự động cho Lender
- * Dựa trên logic 'WaitingRoom' của server cũ
+ * @description AutoInvest Model - Cấu hình đầu tư tự động
+ * Lưu trữ chiến lược đầu tư tự động của nhà đầu tư
  */
 
 const mongoose = require('mongoose');
@@ -13,65 +13,60 @@ const autoInvestSchema = new mongoose.Schema({
         index: true
     },
 
-    // Tổng vốn cam kết đầu tư
+    // Cấu hình tiêu chí
     capital: {
         type: Number,
         required: true,
-        min: [1000000, 'Vốn tối thiểu 1,000,000 VND']
+        min: 0
     },
 
-    // Vốn tối đa cho MỘT khoản vay (để phân tán rủi ro)
     maxCapitalPerLoan: {
         type: Number,
-        required: true,
-        default: 10000000 // Mặc định 10tr
+        default: null
     },
 
-    // Tổng số nodes (đơn vị đầu tư) tương ứng với capital
+    interestRange: {
+        min: { type: Number, required: true },
+        max: { type: Number, required: true }
+    },
+
+    periodRange: {
+        min: { type: Number, required: true },
+        max: { type: Number, required: true }
+    },
+
+    purpose: [{
+        type: String
+    }],
+
+    // Tracking
     totalNodes: {
         type: Number,
-        required: true,
         default: 0
     },
 
-    // Số notes đã được match
     matchedNodes: {
         type: Number,
         default: 0
     },
 
-    // Số vốn đã được match
     matchedCapital: {
         type: Number,
         default: 0
     },
 
-    // Khoảng lãi suất mong muốn
-    interestRange: {
-        min: { type: Number, required: true, default: 10 },
-        max: { type: Number, required: true, default: 20 }
-    },
-
-    // Khoảng kỳ hạn mong muốn (tháng)
-    periodRange: {
-        min: { type: Number, required: true, default: 1 },
-        max: { type: Number, required: true, default: 12 }
-    },
-
-    // Các mục đích vay chấp nhận (vd: "Kinh doanh", "Tiêu dùng")
-    purpose: [{
-        type: String,
-        trim: true
-    }],
-
-    // Danh sách các khoản vay đã match
+    // Danh sách loans đã match
     loans: [{
-        loanId: { type: mongoose.Schema.Types.ObjectId, ref: 'Loan' },
-        nodeMatch: { type: Number, required: true },
-        amount: { type: Number, required: true },
-        matchedAt: { type: Date, default: Date.now }
+        loanId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Loan'
+        },
+        nodeMatch: Number,
+        amount: Number,
+        matchedAt: Date
     }],
 
+    // Trạng thái
     status: {
         type: String,
         enum: ['active', 'paused', 'completed', 'cancelled'],
@@ -79,22 +74,15 @@ const autoInvestSchema = new mongoose.Schema({
         index: true
     },
 
-    cancelledAt: { type: Date },
-    completedAt: { type: Date }
+    completedAt: Date,
+    cancelledAt: Date
 
 }, {
     timestamps: true
 });
 
-// Indexes cho matching
-autoInvestSchema.index({ status: 1, createdAt: 1 }); // FIFO matching
-// Index cho range query
-autoInvestSchema.index({
-    status: 1,
-    'interestRange.min': 1,
-    'interestRange.max': 1,
-    'periodRange.min': 1,
-    'periodRange.max': 1
-});
+// Indexes
+autoInvestSchema.index({ status: 1, 'interestRange.min': 1, 'interestRange.max': 1 });
+autoInvestSchema.index({ status: 1, 'periodRange.min': 1, 'periodRange.max': 1 });
 
 module.exports = mongoose.model('AutoInvest', autoInvestSchema);

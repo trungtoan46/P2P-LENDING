@@ -4,7 +4,6 @@ import { ENDPOINTS } from '../config';
 export const AutoInvestApi = {
     /**
      * Tạo hoặc cập nhật cấu hình Auto Invest
-     * @param {Object} data - { capital, maxCapitalPerLoan, interestRange, periodRange, purpose, status, _id }
      */
     upsertConfig: async (data) => {
         if (data._id) {
@@ -15,15 +14,13 @@ export const AutoInvestApi = {
 
     /**
      * Lấy danh sách cấu hình
-     * @param {Object} params - { page, limit, status }
      */
     getMyConfigs: async (params) => {
         return httpClient.get(ENDPOINTS.AUTO_INVEST.BASE, { params });
     },
 
     /**
-     * Lấy chi tiết
-     * @param {String} id
+     * Lấy chi tiết (kèm waitingRooms + investments)
      */
     getDetail: async (id) => {
         return httpClient.get(`${ENDPOINTS.AUTO_INVEST.BASE}/${id}`);
@@ -31,10 +28,15 @@ export const AutoInvestApi = {
 
     /**
      * Đổi trạng thái (active/paused/cancelled)
-     * @param {String} id
-     * @param {String} status
      */
     toggleStatus: async (id, status) => {
         return httpClient.patch(`${ENDPOINTS.AUTO_INVEST.BASE}/${id}/status`, { status });
+    },
+
+    /**
+     * Hủy campaign + hoàn tiền
+     */
+    cancelConfig: async (id) => {
+        return httpClient.delete(`${ENDPOINTS.AUTO_INVEST.BASE}/${id}`);
     }
 };

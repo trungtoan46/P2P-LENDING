@@ -1,458 +1,375 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Switch, RefreshControl } from 'react-native';
+/**
+ * AutoInvestScreen - List of Auto Invest Campaigns
+ */
+
+import React, { useState, useCallback } from 'react';
+import {
+    View, Text, StyleSheet, FlatList, TouchableOpacity,
+    RefreshControl, Platform, Alert
+} from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
-import { Colors, Spacing } from '../../constants';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { Colors } from '../../constants';
 import { AutoInvestApi } from '../../api';
 import { formatMoney } from '../../utils';
-import { Button, Input, Loading } from '../../components';
-
-const formatNumber = (num) => {
-    if (!num && num !== 0) return '';
-    return num.toString().replace(/\D/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-};
+import { Loading } from '../../components';
 
 const AutoInvestScreen = () => {
     const navigation = useNavigation();
     const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
+    const [campaigns, setCampaigns] = useState([]);
 
-    // Initial State
-    const [configId, setConfigId] = useState(null);
-    const [isEnabled, setIsEnabled] = useState(false);
-
-    // Form Data
-    const [capital, setCapital] = useState('');
-    const [maxCapitalPerLoan, setMaxCapitalPerLoan] = useState('');
-    const [minRate, setMinRate] = useState('10');
-    const [maxRate, setMaxRate] = useState('20');
-    const [minTerm, setMinTerm] = useState('1');
-    const [maxTerm, setMaxTerm] = useState('12');
-
-    // Stats - lay tu config.loans de dong bo voi backend
-    const [matchedCapital, setMatchedCapital] = useState(0);
-    const [matchedCount, setMatchedCount] = useState(0);
-    const [matchesToday, setMatchesToday] = useState(0);
-
-    const isToday = (date) => {
-        if (!date) return false;
-        const d = new Date(date);
-        const t = new Date();
-        return d.getDate() === t.getDate() && d.getMonth() === t.getMonth() && d.getFullYear() === t.getFullYear();
-    };
-
-    const loadConfig = useCallback(async () => {
+    const loadCampaigns = useCallback(async () => {
         try {
-            const result = await AutoInvestApi.getMyConfigs({ limit: 1 });
-            const configs = result.data?.data || result.data || [];
-
-            if (configs.length > 0) {
-                const cfg = configs[0];
-                setConfigId(cfg._id);
-                setIsEnabled(cfg.status === 'active');
-                setCapital(cfg.capital ? formatNumber(cfg.capital) : '');
-                setMaxCapitalPerLoan(cfg.maxCapitalPerLoan ? formatNumber(cfg.maxCapitalPerLoan) : '');
-                setMinRate(cfg.interestRange?.min?.toString() || '10');
-                setMaxRate(cfg.interestRange?.max?.toString() || '20');
-                setMinTerm(cfg.periodRange?.min?.toString() || '1');
-                setMaxTerm(cfg.periodRange?.max?.toString() || '12');
-                setMatchedCapital(cfg.matchedCapital || 0);
-                const loans = cfg.loans || [];
-                setMatchedCount(loans.length);
-                setMatchesToday(loans.filter(l => isToday(l.matchedAt)).length);
-            } else {
-                setConfigId(null);
-                setIsEnabled(false);
-                setCapital('');
-                setMaxCapitalPerLoan('');
-                setMatchedCapital(0);
-                setMatchedCount(0);
-                setMatchesToday(0);
-            }
+            const result = await AutoInvestApi.getMyConfigs({ limit: 20 });
+            const data = result.data?.data || result.data || [];
+            setCampaigns(data);
         } catch (error) {
-            console.error('Error loading config:', error);
+            console.error('Load campaigns error:', error);
         } finally {
             setLoading(false);
             setRefreshing(false);
         }
     }, []);
 
-    useEffect(() => {
-        loadConfig();
-    }, [loadConfig]);
+    useFocusEffect(
+        useCallback(() => {
+            loadCampaigns();
+        }, [loadCampaigns])
+    );
 
     const onRefresh = () => {
         setRefreshing(true);
-        loadConfig();
+        loadCampaigns();
     };
 
-    const handleSave = async (shouldActivate = null) => {
-        const rawCapital = capital ? Number(capital.replace(/\./g, '')) : 0;
-        if (!rawCapital || rawCapital < 1000000) {
-            Alert.alert('Lưu ý', 'Vốn đầu tư tối thiểu là 1,000,000 VND');
-            return;
-        }
-
-        setSaving(true);
+    const togglePause = async (campaign) => {
+        const newStatus = campaign.status === 'active' ? 'paused' : 'active';
         try {
-            const statusToSave = shouldActivate !== null
-                ? (shouldActivate ? 'active' : 'paused')
-                : (isEnabled ? 'active' : 'paused');
-
-            const rawCapital = capital ? Number(capital.replace(/\./g, '')) : 0;
-            const rawMaxCapital = maxCapitalPerLoan ? Number(maxCapitalPerLoan.replace(/\./g, '')) : undefined;
-
-            const data = {
-                capital: rawCapital,
-                maxCapitalPerLoan: rawMaxCapital,
-                interestRange: { min: Number(minRate), max: Number(maxRate) },
-                periodRange: { min: Number(minTerm), max: Number(maxTerm) },
-                status: statusToSave
-            };
-
-            if (configId) data._id = configId;
-
-            const result = await AutoInvestApi.upsertConfig(data);
-
-            if (result.data?._id) setConfigId(result.data._id);
-            if (shouldActivate !== null) setIsEnabled(shouldActivate);
-
-            Alert.alert('Thành công', 'Đã lưu cấu hình Auto-Invest');
-        } catch (error) {
-            console.error('Error saving:', error);
-            Alert.alert('Lỗi', 'Không thể lưu cấu hình');
-        } finally {
-            setSaving(false);
+            await AutoInvestApi.toggleStatus(campaign._id, newStatus);
+            loadCampaigns();
+        } catch (err) {
+            Alert.alert('Lỗi', 'Không thể thay đổi trạng thái');
         }
     };
 
-    const toggleSwitch = () => {
-        const newState = !isEnabled;
-        setIsEnabled(newState);
-        if (configId) {
-            handleSave(newState);
+    const getStatusConfig = (status) => {
+        switch (status) {
+            case 'active': return { label: 'Hoạt động', color: '#10B981', bg: '#ECFDF5', icon: 'play-circle' };
+            case 'paused': return { label: 'Tạm dừng', color: '#F59E0B', bg: '#FFFBEB', icon: 'pause-circle' };
+            case 'completed': return { label: 'Hoàn thành', color: '#6B7280', bg: '#F3F4F6', icon: 'check-circle' };
+            case 'cancelled': return { label: 'Đã hủy', color: '#EF4444', bg: '#FEF2F2', icon: 'close-circle' };
+            default: return { label: status, color: '#6B7280', bg: '#F3F4F6', icon: 'help-circle' };
         }
     };
 
-    const dStyle = {
-        titleColor: isEnabled ? '#fff' : Colors.text,
-        subTextColor: isEnabled ? 'rgba(255,255,255,0.8)' : Colors.textSecondary,
+    const renderCampaign = ({ item, index }) => {
+        const st = getStatusConfig(item.status);
+        const capitalPercent = item.capital > 0 ? Math.min((item.matchedCapital || 0) / item.capital * 100, 100) : 0;
+        const nodesPercent = item.totalNodes > 0 ? Math.min((item.matchedNodes || 0) / item.totalNodes * 100, 100) : 0;
+        const isActive = item.status === 'active';
+        const isPaused = item.status === 'paused';
+
+        return (
+            <TouchableOpacity
+                style={styles.card}
+                onPress={() => navigation.navigate('AutoInvestDetail', { configId: item._id })}
+                activeOpacity={0.7}
+            >
+                {/* Header */}
+                <View style={styles.cardHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                        <View style={[styles.cardIcon, { backgroundColor: st.bg }]}>
+                            <MaterialCommunityIcons name="robot" size={20} color={st.color} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.cardTitle}>Gói #{index + 1}</Text>
+                            <Text style={styles.cardCapital}>{formatMoney(item.capital)}</Text>
+                        </View>
+                    </View>
+                    <View style={[styles.statusBadge, { backgroundColor: st.bg }]}>
+                        <MaterialCommunityIcons name={st.icon} size={14} color={st.color} />
+                        <Text style={[styles.statusText, { color: st.color }]}>{st.label}</Text>
+                    </View>
+                </View>
+
+                {/* Progress */}
+                <View style={styles.progressSection}>
+                    <View style={styles.progressRow}>
+                        <Text style={styles.progressLabel}>Vốn đã dùng</Text>
+                        <Text style={styles.progressValue}>
+                            {formatMoney(item.matchedCapital || 0)} ({capitalPercent.toFixed(0)}%)
+                        </Text>
+                    </View>
+                    <View style={styles.progressBar}>
+                        <View style={[styles.progressFill, {
+                            width: `${capitalPercent}%`,
+                            backgroundColor: capitalPercent >= 90 ? '#EF4444' : capitalPercent >= 70 ? '#F59E0B' : Colors.primary
+                        }]} />
+                    </View>
+
+                    <View style={[styles.progressRow, { marginTop: 8 }]}>
+                        <Text style={styles.progressLabel}>Notes đã khớp</Text>
+                        <Text style={styles.progressValue}>
+                            {item.matchedNodes || 0}/{item.totalNodes || 0}
+                        </Text>
+                    </View>
+                    <View style={styles.progressBar}>
+                        <View style={[styles.progressFill, {
+                            width: `${nodesPercent}%`,
+                            backgroundColor: nodesPercent >= 90 ? '#EF4444' : '#10B981'
+                        }]} />
+                    </View>
+                </View>
+
+                {/* Criteria summary */}
+                <View style={styles.criteriaRow}>
+                    <View style={styles.criteriaChip}>
+                        <MaterialCommunityIcons name="percent" size={12} color={Colors.textSecondary} />
+                        <Text style={styles.criteriaText}>
+                            {item.interestRange?.min}-{item.interestRange?.max}%
+                        </Text>
+                    </View>
+                    <View style={styles.criteriaChip}>
+                        <MaterialCommunityIcons name="calendar-range" size={12} color={Colors.textSecondary} />
+                        <Text style={styles.criteriaText}>
+                            {item.periodRange?.min}-{item.periodRange?.max} tháng
+                        </Text>
+                    </View>
+                    <View style={styles.criteriaChip}>
+                        <MaterialCommunityIcons name="file-document-multiple" size={12} color={Colors.textSecondary} />
+                        <Text style={styles.criteriaText}>
+                            {(item.loans || []).length} khoản
+                        </Text>
+                    </View>
+                </View>
+
+                {/* Quick Actions */}
+                {(isActive || isPaused) && (
+                    <View style={styles.quickActions}>
+                        <TouchableOpacity
+                            style={[styles.actionBtn, { backgroundColor: isActive ? '#FEF3C7' : '#ECFDF5' }]}
+                            onPress={(e) => { e.stopPropagation(); togglePause(item); }}
+                        >
+                            <MaterialCommunityIcons
+                                name={isActive ? 'pause' : 'play'}
+                                size={16}
+                                color={isActive ? '#D97706' : '#10B981'}
+                            />
+                            <Text style={[styles.actionText, { color: isActive ? '#D97706' : '#10B981' }]}>
+                                {isActive ? 'Tạm dừng' : 'Kích hoạt'}
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.actionBtn, { backgroundColor: '#F3F4F6' }]}
+                            onPress={(e) => { e.stopPropagation(); navigation.navigate('AutoInvestDetail', { configId: item._id }); }}
+                        >
+                            <MaterialCommunityIcons name="pencil" size={16} color={Colors.textSecondary} />
+                            <Text style={[styles.actionText, { color: Colors.textSecondary }]}>Chi tiết</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+            </TouchableOpacity>
+        );
     };
 
     if (loading) return <Loading fullScreen />;
 
     return (
-        <View style={styles.overlay}>
-            <View style={styles.dialog}>
-                {/* Header */}
-                <View style={styles.header}>
+        <View style={styles.container}>
+            {/* Header */}
+            <View style={styles.header}>
+                <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+                    <MaterialCommunityIcons name="arrow-left" size={24} color="#fff" />
+                </TouchableOpacity>
+                <View style={{ flex: 1 }}>
                     <Text style={styles.headerTitle}>Đầu tư tự động</Text>
-                    <TouchableOpacity
-                        style={styles.closeBtn}
-                        onPress={() => navigation.goBack()}
-                    >
-                        <MaterialCommunityIcons name="close" size={20} color="#fff" />
-                    </TouchableOpacity>
+                    <Text style={styles.headerSub}>{campaigns.length} gói đầu tư</Text>
                 </View>
-
-                <ScrollView
-                    style={{ flex: 1 }}
-                    contentContainerStyle={styles.scrollContent}
-                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+                <TouchableOpacity
+                    style={styles.headerAddBtn}
+                    onPress={() => navigation.navigate('AutoInvestDetail', {})}
                 >
-                    {/* Main Switch Card */}
-                    <View style={[styles.mainCard, isEnabled ? styles.cardActive : styles.cardInactive]}>
-                        <View style={styles.statusRow}>
-                            <View style={styles.statusInfo}>
-                                <Text style={[styles.statusTitle, { color: dStyle.titleColor }]}>Auto-Invest</Text>
-                                <Text style={[styles.statusText, { color: dStyle.subTextColor }]}>
-                                    {isEnabled ? 'Đang hoạt động' : 'Đang tạm dừng'}
-                                </Text>
-                            </View>
-                            <Switch
-                                trackColor={{ false: '#d1d5db', true: '#a78bfa' }}
-                                thumbColor={isEnabled ? '#fff' : '#f4f3f4'}
-                                onValueChange={toggleSwitch}
-                                value={isEnabled}
-                                style={{ transform: [{ scaleX: 1.2 }, { scaleY: 1.2 }] }}
-                            />
-                        </View>
-                        {isEnabled && (
-                            <View style={styles.statsContainer}>
-                                <View style={styles.statItem}>
-                                    <Text style={styles.statLabel}>Đã đầu tư</Text>
-                                    <Text style={styles.statValue}>{formatMoney(matchedCapital)}</Text>
-                                </View>
-                                <View style={styles.statDivider} />
-                                <View style={styles.statItem}>
-                                    <Text style={styles.statLabel}>Lệnh đã khớp</Text>
-                                    <Text style={styles.statValue}>{matchedCount} lệnh</Text>
-                                </View>
-                                <View style={styles.statDivider} />
-                                <View style={styles.statItem}>
-                                    <Text style={styles.statLabel}>Khớp hôm nay</Text>
-                                    <Text style={styles.statValue}>{matchesToday} lệnh</Text>
-                                </View>
-                            </View>
-                        )}
-                    </View>
-
-                    <Text style={styles.sectionHeader}>Cấu hình đầu tư</Text>
-
-                    {/* Capital Section */}
-                    <View style={styles.configCard}>
-                        <View style={styles.cardHeader}>
-                            <MaterialCommunityIcons name="wallet-outline" size={22} color={Colors.primary} />
-                            <Text style={styles.cardTitle}>Nguồn vốn</Text>
-                        </View>
-
-                        <Input
-                            label="Tổng vốn cam kết (VND)"
-                            value={capital}
-                            onChangeText={(text) => {
-                                const clean = text.replace(/[^0-9]/g, '');
-                                setCapital(clean ? formatNumber(clean) : '');
-                            }}
-                            keyboardType="numeric"
-                            placeholder="VD: 50,000,000"
-                            style={{ marginBottom: 12 }}
-                        />
-                        <Input
-                            label="Tối đa mỗi khoản vay (VND)"
-                            value={maxCapitalPerLoan}
-                            onChangeText={(text) => {
-                                const clean = text.replace(/[^0-9]/g, '');
-                                setMaxCapitalPerLoan(clean ? formatNumber(clean) : '');
-                            }}
-                            keyboardType="numeric"
-                            placeholder="Để trống = 20% tổng vốn"
-                        />
-                    </View>
-
-                    {/* Criteria Section */}
-                    <View style={styles.configCard}>
-                        <View style={styles.cardHeader}>
-                            <MaterialCommunityIcons name="tune-vertical" size={22} color={Colors.primary} />
-                            <Text style={styles.cardTitle}>Tiêu chí lựa chọn</Text>
-                        </View>
-
-                        {/* Interest Rate */}
-                        <View style={styles.criteriaRow}>
-                            <Text style={styles.criteriaLabel}>Lãi suất (%/năm)</Text>
-                            <View style={styles.rangeInputs}>
-                                <Input
-                                    value={minRate}
-                                    onChangeText={setMinRate}
-                                    keyboardType="numeric"
-                                    inputStyle={styles.smallInput}
-                                    style={{ flex: 1, marginBottom: 0 }}
-                                />
-                                <Text style={styles.rangeSep}>-</Text>
-                                <Input
-                                    value={maxRate}
-                                    onChangeText={setMaxRate}
-                                    keyboardType="numeric"
-                                    inputStyle={styles.smallInput}
-                                    style={{ flex: 1, marginBottom: 0 }}
-                                />
-                            </View>
-                        </View>
-
-                        <View style={styles.divider} />
-
-                        {/* Term */}
-                        <View style={styles.criteriaRow}>
-                            <Text style={styles.criteriaLabel}>Kỳ hạn (tháng)</Text>
-                            <View style={styles.rangeInputs}>
-                                <Input
-                                    value={minTerm}
-                                    onChangeText={setMinTerm}
-                                    keyboardType="numeric"
-                                    inputStyle={styles.smallInput}
-                                    style={{ flex: 1, marginBottom: 0 }}
-                                />
-                                <Text style={styles.rangeSep}>-</Text>
-                                <Input
-                                    value={maxTerm}
-                                    onChangeText={setMaxTerm}
-                                    keyboardType="numeric"
-                                    inputStyle={styles.smallInput}
-                                    style={{ flex: 1, marginBottom: 0 }}
-                                />
-                            </View>
-                        </View>
-                    </View>
-                    <View style={{ height: 20 }} />
-                </ScrollView>
-
-                {/* Bottom Action Bar */}
-                <View style={styles.bottomBar}>
-                    <Button
-                        title="Áp dụng cấu hình"
-                        onPress={() => handleSave(null)}
-                        disabled={saving}
-                        style={styles.saveBtn}
-                    />
-                </View>
+                    <MaterialCommunityIcons name="plus" size={20} color="#fff" />
+                    <Text style={styles.headerAddText}>Tạo mới</Text>
+                </TouchableOpacity>
             </View>
+
+            {/* Summary Bar */}
+            {campaigns.length > 0 && (
+                <View style={styles.summaryBar}>
+                    <View style={styles.summaryItem}>
+                        <Text style={styles.summaryValue}>
+                            {campaigns.filter(c => c.status === 'active').length}
+                        </Text>
+                        <Text style={styles.summaryLabel}>Đang hoạt động</Text>
+                    </View>
+                    <View style={styles.summaryDivider} />
+                    <View style={styles.summaryItem}>
+                        <Text style={styles.summaryValue}>
+                            {formatMoney(campaigns.reduce((s, c) => s + (c.matchedCapital || 0), 0))}
+                        </Text>
+                        <Text style={styles.summaryLabel}>Tổng đã đầu tư</Text>
+                    </View>
+                    <View style={styles.summaryDivider} />
+                    <View style={styles.summaryItem}>
+                        <Text style={styles.summaryValue}>
+                            {campaigns.reduce((s, c) => s + (c.matchedNodes || 0), 0)}
+                        </Text>
+                        <Text style={styles.summaryLabel}>Notes đã khớp</Text>
+                    </View>
+                </View>
+            )}
+
+            <FlatList
+                data={campaigns}
+                renderItem={renderCampaign}
+                keyExtractor={item => item._id}
+                contentContainerStyle={styles.list}
+                showsVerticalScrollIndicator={false}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+                ListEmptyComponent={
+                    <View style={styles.emptyContainer}>
+                        <MaterialCommunityIcons name="robot-off" size={64} color="#D1D5DB" />
+                        <Text style={styles.emptyTitle}>Chưa có gói đầu tư</Text>
+                        <Text style={styles.emptySub}>
+                            Tạo gói đầu tư tự động để hệ thống tự khớp lệnh cho bạn
+                        </Text>
+                        <TouchableOpacity
+                            style={styles.emptyBtn}
+                            onPress={() => navigation.navigate('AutoInvestDetail', {})}
+                        >
+                            <MaterialCommunityIcons name="plus" size={20} color="#fff" />
+                            <Text style={styles.emptyBtnText}>Tạo gói đầu tiên</Text>
+                        </TouchableOpacity>
+                    </View>
+                }
+            />
+
+            {/* FAB */}
+            {campaigns.length > 0 && (
+                <TouchableOpacity
+                    style={styles.fab}
+                    onPress={() => navigation.navigate('AutoInvestDetail', {})}
+                    activeOpacity={0.9}
+                >
+                    <MaterialCommunityIcons name="plus" size={28} color="#fff" />
+                </TouchableOpacity>
+            )}
         </View>
     );
 };
 
 const styles = StyleSheet.create({
-    overlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 16,
-    },
-    dialog: {
-        width: '100%',
-        height: '90%', // Increased from 80%
-        backgroundColor: '#f5f7fa',
-        borderRadius: 16,
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-    },
+    container: { flex: 1, backgroundColor: '#F7F9FC' },
     header: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
         backgroundColor: Colors.primary,
-        paddingVertical: 12,
+        paddingTop: Platform.OS === 'ios' ? 56 : 40,
+        paddingBottom: 16,
         paddingHorizontal: 16,
+        gap: 12,
     },
-    headerTitle: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: '#fff',
+    backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+    headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#fff' },
+    headerSub: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
+    headerAddBtn: {
+        flexDirection: 'row', alignItems: 'center', gap: 4,
+        backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 8,
+        borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)',
     },
-    closeBtn: {
-        width: 28,
-        height: 28,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'rgba(255,255,255,0.2)',
-        borderRadius: 14,
-    },
-    scrollContent: {
-        padding: 16,
-    },
-    mainCard: {
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 16,
-        elevation: 2,
-    },
-    cardActive: {
-        backgroundColor: Colors.primary,
-    },
-    cardInactive: {
+    headerAddText: { fontSize: 13, fontWeight: '600', color: '#fff' },
+
+    summaryBar: {
+        flexDirection: 'row',
         backgroundColor: '#fff',
-    },
-    statusRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    statusTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
-    statusText: {
-        fontSize: 13,
-        marginTop: 2,
-    },
-    statsContainer: {
-        flexDirection: 'row',
+        marginHorizontal: 16,
         marginTop: 16,
-        paddingTop: 12,
-        borderTopWidth: 1,
-        borderTopColor: 'rgba(255,255,255,0.2)',
-    },
-    statItem: {
-        flex: 1,
-    },
-    statLabel: {
-        fontSize: 11,
-        color: 'rgba(255,255,255,0.8)',
-        marginBottom: 2,
-    },
-    statValue: {
-        fontSize: 15,
-        fontWeight: 'bold',
-        color: '#fff',
-    },
-    statDivider: {
-        width: 1,
-        backgroundColor: 'rgba(255,255,255,0.2)',
-        marginHorizontal: 12,
-    },
-    sectionHeader: {
-        fontSize: 14,
-        fontWeight: 'bold',
-        color: Colors.textSecondary,
-        marginBottom: 8,
-        marginLeft: 4,
-        textTransform: 'uppercase',
-    },
-    configCard: {
-        backgroundColor: '#fff',
-        borderRadius: 12,
+        borderRadius: 14,
         padding: 14,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+    },
+    summaryItem: { flex: 1, alignItems: 'center' },
+    summaryValue: { fontSize: 15, fontWeight: '700', color: Colors.text },
+    summaryLabel: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
+    summaryDivider: { width: 1, backgroundColor: '#E5E7EB', marginHorizontal: 8 },
+
+    list: { padding: 16, paddingBottom: 100 },
+
+    card: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 16,
         marginBottom: 14,
-        elevation: 1,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 6,
+        borderWidth: 1,
+        borderColor: '#F1F5F9',
     },
     cardHeader: {
         flexDirection: 'row',
+        justifyContent: 'space-between',
         alignItems: 'center',
-        gap: 8,
-        marginBottom: 12,
-        paddingBottom: 8,
-        borderBottomWidth: 1,
-        borderBottomColor: '#f3f4f6',
+        marginBottom: 14,
     },
-    cardTitle: {
-        fontSize: 15,
-        fontWeight: 'bold',
-        color: Colors.text,
+    cardIcon: {
+        width: 40, height: 40, borderRadius: 20,
+        alignItems: 'center', justifyContent: 'center', marginRight: 12,
     },
-    criteriaRow: {
-        marginBottom: 0,
+    cardTitle: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
+    cardCapital: { fontSize: 17, fontWeight: '700', color: Colors.text, marginTop: 2 },
+    statusBadge: {
+        flexDirection: 'row', alignItems: 'center', gap: 4,
+        paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
     },
-    criteriaLabel: {
-        fontSize: 13,
-        color: Colors.text,
-        fontWeight: '500',
-        marginBottom: 6,
+    statusText: { fontSize: 12, fontWeight: '600' },
+
+    progressSection: { marginBottom: 12 },
+    progressRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+    progressLabel: { fontSize: 12, color: Colors.textSecondary },
+    progressValue: { fontSize: 12, fontWeight: '600', color: Colors.text },
+    progressBar: { height: 6, borderRadius: 3, backgroundColor: '#E5E7EB', overflow: 'hidden' },
+    progressFill: { height: '100%', borderRadius: 3 },
+
+    criteriaRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+    criteriaChip: {
+        flexDirection: 'row', alignItems: 'center', gap: 4,
+        backgroundColor: '#F7F9FC', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
     },
-    rangeInputs: {
-        flexDirection: 'row',
-        alignItems: 'center',
+    criteriaText: { fontSize: 11, color: Colors.textSecondary },
+
+    quickActions: { flexDirection: 'row', gap: 8, borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 12 },
+    actionBtn: {
+        flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        gap: 6, paddingVertical: 8, borderRadius: 10,
     },
-    smallInput: {
-        textAlign: 'center',
-        height: 36,
-        paddingVertical: 4,
-        fontSize: 14,
+    actionText: { fontSize: 13, fontWeight: '600' },
+
+    emptyContainer: { alignItems: 'center', marginTop: 80, paddingHorizontal: 40 },
+    emptyTitle: { fontSize: 18, fontWeight: '700', color: Colors.text, marginTop: 16 },
+    emptySub: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', marginTop: 8, lineHeight: 20 },
+    emptyBtn: {
+        flexDirection: 'row', alignItems: 'center', gap: 8,
+        backgroundColor: Colors.primary, paddingVertical: 12, paddingHorizontal: 24,
+        borderRadius: 12, marginTop: 20,
     },
-    rangeSep: {
-        fontSize: 18,
-        color: Colors.textSecondary,
-        marginHorizontal: 8,
-        fontWeight: 'bold',
-    },
-    bottomBar: {
-        backgroundColor: '#fff',
-        padding: 16,
-        borderTopWidth: 1,
-        borderTopColor: '#f0f0f0',
-    },
-    saveBtn: {
-        borderRadius: 12,
+    emptyBtnText: { fontSize: 15, fontWeight: '600', color: '#fff' },
+
+    fab: {
+        position: 'absolute', bottom: 30, right: 20,
+        width: 60, height: 60, borderRadius: 30,
+        backgroundColor: Colors.primary, justifyContent: 'center', alignItems: 'center',
+        elevation: 8, shadowColor: Colors.primary,
+        shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8,
     },
 });
 

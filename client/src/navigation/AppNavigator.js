@@ -35,6 +35,7 @@ import {
 
     RepaymentScheduleScreen,
     AutoInvestScreen,
+    AutoInvestDetailScreen,
     CreateAutoInvestScreen,
     EditProfileScreen
 } from '../screens';
@@ -152,8 +153,17 @@ const MainStack = () => (
             component={AutoInvestScreen}
             options={{
                 headerShown: false,
-                presentation: 'modal',
-                animation: 'slide_from_bottom'
+                presentation: 'card',
+                animation: 'slide_from_right'
+            }}
+        />
+        <Stack.Screen
+            name="AutoInvestDetail"
+            component={AutoInvestDetailScreen}
+            options={{
+                headerShown: false,
+                presentation: 'card',
+                animation: 'slide_from_right'
             }}
         />
         <Stack.Screen name="Ekyc" component={EkycScreen} options={{ headerShown: false }} />

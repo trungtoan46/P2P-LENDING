@@ -3,8 +3,14 @@
  */
 
 const AutoInvest = require('../models/AutoInvest');
+const WaitingRoom = require('../models/WaitingRoom');
+const Investment = require('../models/Investment');
+const walletService = require('../services/wallet.service');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 const { paginatedResponse } = require('../utils/response');
+const logger = require('../utils/logger');
+
+const MAX_CAMPAIGNS_PER_USER = 5;
 
 class AutoInvestController {
     /**
@@ -22,17 +28,9 @@ class AutoInvestController {
                 status
             } = req.body;
 
-            // Validate status
             if (status && !['active', 'paused', 'cancelled'].includes(status)) {
                 throw new ValidationError('Trạng thái không hợp lệ');
             }
-
-            // Tìm config hiện tại (Mỗi user chỉ có 1 config Auto Invest active/paused tại 1 thời điểm? 
-            // Hoặc cho phép nhiều gói? 
-            // Logic đơn giản: Cho phép tạo nhiều gói để diversification)
-
-            // Tuy nhiên, để đơn giản cho UI hiện tại, ta sẽ tạo mới.
-            // Nếu muốn update, phải gửi ID.
 
             let autoInvest;
             if (req.body._id || req.params.id) {
@@ -40,12 +38,9 @@ class AutoInvestController {
                 autoInvest = await AutoInvest.findOne({ _id: id, investorId: userId });
                 if (!autoInvest) throw new NotFoundError('Không tìm thấy cấu hình Auto Invest');
 
-                // Update fields
                 if (capital) {
-                    // Logic phức tạp: Nếu giảm capital xuống thấp hơn matchedCapital thì sao?
-                    // Tạm thời cho phép update, nhưng logic matching sẽ check
                     autoInvest.capital = capital;
-                    autoInvest.totalNodes = Math.floor(capital / 500000); // 500k base unit
+                    autoInvest.totalNodes = Math.floor(capital / 500000);
                 }
                 if (maxCapitalPerLoan) autoInvest.maxCapitalPerLoan = maxCapitalPerLoan;
                 if (interestRange) autoInvest.interestRange = interestRange;
@@ -58,38 +53,29 @@ class AutoInvestController {
 
                 await autoInvest.save();
             } else {
-                // Create New
+                // Create New - Cho phép nhiều campaign
                 if (!capital) throw new ValidationError('Vui lòng nhập số vốn đầu tư');
 
-                // Check if user already has an active or paused config
-                const existingConfig = await AutoInvest.findOne({
+                // Giới hạn số campaign active/paused
+                const activeCount = await AutoInvest.countDocuments({
                     investorId: userId,
                     status: { $in: ['active', 'paused'] }
                 });
 
-                if (existingConfig) {
-                    // Update existing instead of creating new
-                    autoInvest = existingConfig;
-                    autoInvest.capital = capital;
-                    autoInvest.maxCapitalPerLoan = maxCapitalPerLoan || (capital / 5);
-                    autoInvest.totalNodes = Math.floor(capital / 500000);
-                    autoInvest.interestRange = interestRange || { min: 10, max: 20 };
-                    autoInvest.periodRange = periodRange || { min: 1, max: 12 };
-                    autoInvest.purpose = purpose || [];
-                    autoInvest.status = 'active'; // Re-activate
-                    await autoInvest.save();
-                } else {
-                    autoInvest = await AutoInvest.create({
-                        investorId: userId,
-                        capital,
-                        maxCapitalPerLoan: maxCapitalPerLoan || (capital / 5), // Default max 20% per loan
-                        totalNodes: Math.floor(capital / 500000), // Hardcode Base Unit or import const
-                        interestRange: interestRange || { min: 10, max: 20 },
-                        periodRange: periodRange || { min: 1, max: 12 },
-                        purpose: purpose || [],
-                        status: 'active'
-                    });
+                if (activeCount >= MAX_CAMPAIGNS_PER_USER) {
+                    throw new ValidationError(`Tối đa ${MAX_CAMPAIGNS_PER_USER} gói đầu tư tự động`);
                 }
+
+                autoInvest = await AutoInvest.create({
+                    investorId: userId,
+                    capital,
+                    maxCapitalPerLoan: maxCapitalPerLoan || (capital / 5),
+                    totalNodes: Math.floor(capital / 500000),
+                    interestRange: interestRange || { min: 10, max: 20 },
+                    periodRange: periodRange || { min: 1, max: 12 },
+                    purpose: purpose || [],
+                    status: status || 'active'
+                });
             }
 
             return res.json({
@@ -115,7 +101,7 @@ class AutoInvestController {
 
             const query = { investorId: userId };
             if (status) query.status = status;
-            else query.status = { $ne: 'cancelled' }; // Mặc định ẩn cancelled
+            else query.status = { $ne: 'cancelled' };
 
             const items = await AutoInvest.find(query)
                 .sort({ createdAt: -1 })
@@ -131,19 +117,35 @@ class AutoInvestController {
     }
 
     /**
-     * Lấy chi tiết
+     * Lấy chi tiết (populate loans)
      */
     async getDetail(req, res, next) {
         try {
             const { id } = req.params;
             const config = await AutoInvest.findOne({ _id: id, investorId: req.user.id })
-                .populate('loans.loanId', 'loanID capital interestRate term purpose');
+                .populate('loans.loanId', 'loanID capital interestRate term purpose status');
 
             if (!config) throw new NotFoundError('Không tìm thấy gói đầu tư');
 
+            // Load WaitingRooms liên quan
+            const waitingRooms = await WaitingRoom.find({
+                autoInvestId: id,
+                status: { $in: ['waiting', 'matched'] }
+            }).populate('loanId', 'purpose capital interestRate term');
+
+            // Load Investments liên quan
+            const investments = await Investment.find({
+                autoInvestId: id,
+                status: { $in: ['pending', 'active', 'completed'] }
+            }).populate('loanId', 'purpose capital interestRate term status');
+
             return res.json({
                 success: true,
-                data: config
+                data: {
+                    ...config.toObject(),
+                    waitingRooms,
+                    investments
+                }
             });
         } catch (error) {
             next(error);
@@ -156,7 +158,7 @@ class AutoInvestController {
     async toggleStatus(req, res, next) {
         try {
             const { id } = req.params;
-            const { status } = req.body; // 'active' or 'paused' or 'cancelled'
+            const { status } = req.body;
 
             const config = await AutoInvest.findOne({ _id: id, investorId: req.user.id });
             if (!config) throw new NotFoundError('Không tìm thấy gói đầu tư');
@@ -175,6 +177,93 @@ class AutoInvestController {
             next(error);
         }
     }
+
+    /**
+     * Hủy campaign + rollback WaitingRoom + refund Investment pending
+     */
+    async cancelConfig(req, res, next) {
+        try {
+            const { id } = req.params;
+            const userId = req.user.id;
+
+            const config = await AutoInvest.findOne({ _id: id, investorId: userId });
+            if (!config) throw new NotFoundError('Không tìm thấy gói đầu tư');
+            if (config.status === 'cancelled') {
+                throw new ValidationError('Gói đầu tư đã được hủy trước đó');
+            }
+
+            let refundedAmount = 0;
+            let cancelledRooms = 0;
+            let cancelledInvestments = 0;
+            let uncancellableCount = 0;
+
+            // 1. Hủy tất cả WaitingRoom đang chờ
+            const waitingRooms = await WaitingRoom.find({
+                autoInvestId: id,
+                status: 'waiting'
+            });
+
+            for (const room of waitingRooms) {
+                room.status = 'cancelled';
+                room.cancelledAt = new Date();
+                room.cancellationReason = 'Hủy gói đầu tư tự động';
+                await room.save();
+                cancelledRooms++;
+            }
+
+            // 2. Xử lý Investments
+            const investments = await Investment.find({
+                autoInvestId: id,
+                status: { $in: ['pending'] }
+            });
+
+            for (const inv of investments) {
+                try {
+                    // Hoàn tiền frozen
+                    await walletService.releaseFrozen(userId, inv.amount);
+                    inv.status = 'cancelled';
+                    inv.cancelledAt = new Date();
+                    await inv.save();
+
+                    refundedAmount += inv.amount;
+                    cancelledInvestments++;
+
+                    logger.info(`[Cancel AI] Refunded ${inv.amount} for investment ${inv._id}`);
+                } catch (refundErr) {
+                    logger.error(`[Cancel AI] Failed to refund investment ${inv._id}: ${refundErr.message}`);
+                    uncancellableCount++;
+                }
+            }
+
+            // 3. Đếm investments active (không thể hủy)
+            const activeInvestments = await Investment.countDocuments({
+                autoInvestId: id,
+                status: { $in: ['active', 'completed'] }
+            });
+            uncancellableCount += activeInvestments;
+
+            // 4. Cập nhật config status
+            config.status = 'cancelled';
+            config.cancelledAt = new Date();
+            await config.save();
+
+            return res.json({
+                success: true,
+                message: 'Đã hủy gói đầu tư',
+                data: {
+                    refundedAmount,
+                    cancelledRooms,
+                    cancelledInvestments,
+                    uncancellableCount,
+                    config
+                }
+            });
+
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 module.exports = new AutoInvestController();
+

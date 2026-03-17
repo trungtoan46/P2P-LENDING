@@ -12,7 +12,7 @@ export { HomeScreen, BorrowerDashboard, LenderDashboard } from './home';
 export { LoansListScreen, CreateLoanScreen, LoanPreviewScreen, LoanDetailScreen, DisbursementMethodScreen } from './loans';
 
 // Investments
-export { InvestmentsScreen, RepaymentScheduleScreen, AutoInvestScreen, CreateAutoInvestScreen, WaitingRoomScreen } from './investments';
+export { InvestmentsScreen, RepaymentScheduleScreen, AutoInvestScreen, AutoInvestDetailScreen, CreateAutoInvestScreen, WaitingRoomScreen } from './investments';
 
 // Wallet
 export { default as WalletScreen } from './wallet/WalletScreen';

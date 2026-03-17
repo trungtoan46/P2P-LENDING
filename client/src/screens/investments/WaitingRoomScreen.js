@@ -1,12 +1,7 @@
-/**
- * Màn hình danh sách phòng chờ & đầu tư (Portfolio)
- * Hiển thị phòng chờ thủ công + các khoản đầu tư đã khớp
- */
-
 import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Alert } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { WaitingRoomsApi, InvestmentsApi } from '../../api';
+import { WaitingRoomsApi, InvestmentsApi, AutoInvestApi } from '../../api';
 import { Loading } from '../../components';
 import { Colors } from '../../constants';
 import { formatMoney } from '../../utils';
@@ -17,12 +12,27 @@ const WaitingRoomScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
+    // Auto Invest Status
+    const [autoInvestStatus, setAutoInvestStatus] = useState(null); // null = no config
+
     useEffect(() => {
         loadRooms();
     }, []);
 
+    const loadAutoInvestStatus = async () => {
+        try {
+            const result = await AutoInvestApi.getMyConfigs({ limit: 20 });
+            const configs = result.data?.data || result.data || [];
+            setAutoInvestStatus(configs.length > 0 ? configs : null);
+        } catch (err) {
+            console.log('Load auto invest status error:', err);
+        }
+    };
+
     const loadRooms = async () => {
         try {
+            await loadAutoInvestStatus();
+
             const [roomsResult, investmentsResult] = await Promise.all([
                 WaitingRoomsApi.getMyRooms(),
                 InvestmentsApi.getMyInvestments({ status: 'pending', limit: 100 })
@@ -81,6 +91,42 @@ const WaitingRoomScreen = ({ navigation }) => {
                     }
                 }
             ]
+        );
+    };
+
+    // Auto Invest Banner
+    const renderAutoInvestBanner = () => {
+        if (!autoInvestStatus || !Array.isArray(autoInvestStatus)) return null;
+        const configs = autoInvestStatus;
+        const activeCount = configs.filter(c => c.status === 'active').length;
+        const totalMatchedNodes = configs.reduce((s, c) => s + (c.matchedNodes || 0), 0);
+        const totalNodesAll = configs.reduce((s, c) => s + (c.totalNodes || 0), 0);
+        const totalMatchedCapital = configs.reduce((s, c) => s + (c.matchedCapital || 0), 0);
+        const hasActive = activeCount > 0;
+
+        return (
+            <TouchableOpacity
+                style={[styles.aiBanner, { backgroundColor: hasActive ? `${Colors.primary}10` : '#FEF3C710', borderColor: hasActive ? `${Colors.primary}30` : '#FDE68A' }]}
+                onPress={() => navigation.navigate('AutoInvest')}
+                activeOpacity={0.7}
+            >
+                <View style={[styles.aiBannerIcon, { backgroundColor: hasActive ? `${Colors.primary}20` : '#FEF3C7' }]}>
+                    <MaterialCommunityIcons
+                        name={hasActive ? 'robot' : 'robot-off'}
+                        size={20}
+                        color={hasActive ? Colors.primary : '#D97706'}
+                    />
+                </View>
+                <View style={{ flex: 1 }}>
+                    <Text style={[styles.aiBannerTitle, { color: hasActive ? Colors.primary : '#92400E' }]}>
+                        {activeCount} gói {hasActive ? 'đang hoạt động' : 'tạm dừng'}
+                    </Text>
+                    <Text style={styles.aiBannerSub}>
+                        {totalMatchedNodes}/{totalNodesAll} notes đã khớp {'\u00B7'} {formatMoney(totalMatchedCapital)} đã dùng
+                    </Text>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.textSecondary} />
+            </TouchableOpacity>
         );
     };
 
@@ -217,6 +263,7 @@ const WaitingRoomScreen = ({ navigation }) => {
                 refreshControl={
                     <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.primary} />
                 }
+                ListHeaderComponent={renderAutoInvestBanner}
                 ListEmptyComponent={
                     <View style={styles.emptyContainer}>
                         <MaterialCommunityIcons name="clipboard-text-outline" size={60} color={Colors.gray300} />
@@ -323,6 +370,33 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
+    },
+
+    // Auto Invest Banner
+    aiBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 14,
+        borderRadius: 14,
+        marginBottom: 16,
+        borderWidth: 1,
+        gap: 12,
+    },
+    aiBannerIcon: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    aiBannerTitle: {
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    aiBannerSub: {
+        fontSize: 12,
+        color: Colors.textSecondary,
+        marginTop: 2,
     },
 });
 
