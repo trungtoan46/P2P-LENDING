@@ -266,17 +266,31 @@ class EkycService {
 
         const isSuccess = isLivenessPass && isFaceMatch;
 
+        // Message cụ thể cho từng trường hợp
+        let failureMessage = '';
+        if (!isSuccess) {
+            if (!isFaceMatch && !isLivenessPass) {
+                failureMessage = 'Khuôn mặt không khớp với CCCD và kiểm tra liveness không đạt';
+            } else if (!isFaceMatch) {
+                failureMessage = 'Khuôn mặt không khớp với ảnh trên CCCD. Vui lòng thử lại với ánh sáng tốt hơn';
+            } else {
+                failureMessage = 'Kiểm tra liveness không đạt. Vui lòng đảm bảo bạn đang quay mặt thật';
+            }
+        }
+
         return {
             success: isSuccess,
             data: {
                 ...results,
                 kycStatus: isSuccess ? 'pending' : 'failed',
                 isVerified: isSuccess,
+                isFaceMatch,
+                isLivenessPass,
                 frontIdOcr: ocrFrontResult
             },
             message: isSuccess
                 ? 'eKYC hoàn tất, chờ xét duyệt'
-                : results.error || 'eKYC chưa đạt yêu cầu, vui lòng thử lại'
+                : failureMessage
         };
     }
 

@@ -95,6 +95,9 @@ export const AuthProvider = ({ children }) => {
 
             setUser(userData);
             setIsLoggedIn(true);
+
+            // Tự động refresh để lấy details (kycStatus, ...)
+            setTimeout(() => refreshProfile(), 500);
         }
         return result;
     };

@@ -5,7 +5,9 @@
 const AutoInvest = require('../models/AutoInvest');
 const WaitingRoom = require('../models/WaitingRoom');
 const Investment = require('../models/Investment');
+const Loan = require('../models/Loan');
 const walletService = require('../services/wallet.service');
+const matchingService = require('../services/matching.service');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 const { paginatedResponse } = require('../utils/response');
 const logger = require('../utils/logger');
@@ -32,11 +34,39 @@ class AutoInvestController {
                 throw new ValidationError('Trạng thái không hợp lệ');
             }
 
+            // Validate inputs
+            if (capital && capital < 1000000) {
+                throw new ValidationError('Vốn đầu tư tối thiểu là 1,000,000 VND');
+            }
+            if (interestRange) {
+                if (interestRange.min < 0 || interestRange.max < 0) throw new ValidationError('Lãi suất không được âm');
+                if (interestRange.min > interestRange.max) throw new ValidationError('Lãi suất tối thiểu phải nhỏ hơn tối đa');
+                if (interestRange.max > 50) throw new ValidationError('Lãi suất tối đa không quá 50%/năm');
+            }
+            if (periodRange) {
+                if (periodRange.min < 1) throw new ValidationError('Kỳ hạn tối thiểu là 1 tháng');
+                if (periodRange.min > periodRange.max) throw new ValidationError('Kỳ hạn tối thiểu phải nhỏ hơn tối đa');
+                if (periodRange.max > 18) throw new ValidationError('Kỳ hạn tối đa không quá 60 tháng');
+            }
+            if (maxCapitalPerLoan && capital && maxCapitalPerLoan > capital) {
+                throw new ValidationError('Tối đa mỗi khoản vay không được lớn hơn tổng vốn');
+            }
+
             let autoInvest;
             if (req.body._id || req.params.id) {
                 const id = req.body._id || req.params.id;
                 autoInvest = await AutoInvest.findOne({ _id: id, investorId: userId });
                 if (!autoInvest) throw new NotFoundError('Không tìm thấy cấu hình Auto Invest');
+
+                // Không cho sửa config đã hủy
+                if (autoInvest.status === 'cancelled') {
+                    throw new ValidationError('Không thể chỉnh sửa gói đã hủy');
+                }
+
+                // Không cho giảm vốn dưới mức đã dùng
+                if (capital && capital < (autoInvest.matchedCapital || 0)) {
+                    throw new ValidationError(`Không thể giảm vốn dưới ${autoInvest.matchedCapital?.toLocaleString()} VND (đã dùng)`);
+                }
 
                 if (capital) {
                     autoInvest.capital = capital;
@@ -78,9 +108,30 @@ class AutoInvestController {
                 });
             }
 
+            // Sau khi tạo mới campaign active, scan khoản vay hiện có
+            let initialMatches = 0;
+            if (!req.body._id && !req.params.id && autoInvest.status === 'active') {
+                try {
+                    const availableLoans = await Loan.find({
+                        status: 'approved',
+                        $expr: { $gt: ['$totalNotes', '$investedNotes'] }
+                    }).sort({ createdAt: 1 }).limit(20);
+
+                    for (const loan of availableLoans) {
+                        const result = await matchingService.performAutoMatching(loan);
+                        initialMatches += (result.matched || 0);
+                    }
+                    logger.info(`[AutoInvest] Initial scan: ${initialMatches} notes matched for new campaign ${autoInvest._id}`);
+                } catch (scanErr) {
+                    logger.error(`[AutoInvest] Initial scan error: ${scanErr.message}`);
+                }
+            }
+
             return res.json({
                 success: true,
-                message: 'Cập nhật cấu hình Auto Invest thành công',
+                message: initialMatches > 0
+                    ? `Tạo gói thành công! Đã khớp ${initialMatches} notes từ khoản vay hiện có.`
+                    : 'Cập nhật cấu hình Auto Invest thành công',
                 data: autoInvest
             });
 
@@ -127,10 +178,10 @@ class AutoInvestController {
 
             if (!config) throw new NotFoundError('Không tìm thấy gói đầu tư');
 
-            // Load WaitingRooms liên quan
+            // Load WaitingRooms chưa chuyển thành Investment (chỉ status waiting)
             const waitingRooms = await WaitingRoom.find({
                 autoInvestId: id,
-                status: { $in: ['waiting', 'matched'] }
+                status: 'waiting'
             }).populate('loanId', 'purpose capital interestRate term');
 
             // Load Investments liên quan
@@ -160,17 +211,32 @@ class AutoInvestController {
             const { id } = req.params;
             const { status } = req.body;
 
+            if (!status || !['active', 'paused'].includes(status)) {
+                throw new ValidationError('Trạng thái chỉ được chuyển giữa active và paused');
+            }
+
             const config = await AutoInvest.findOne({ _id: id, investorId: req.user.id });
             if (!config) throw new NotFoundError('Không tìm thấy gói đầu tư');
 
-            config.status = status;
-            if (status === 'cancelled') config.cancelledAt = new Date();
+            if (config.status === 'cancelled') {
+                throw new ValidationError('Không thể kích hoạt gói đã hủy. Vui lòng tạo gói mới.');
+            }
+            if (config.status === 'completed') {
+                throw new ValidationError('Gói đã hoàn thành, không thể thay đổi trạng thái');
+            }
 
+            // Kiểm tra quota khi kích hoạt lại
+            if (status === 'active' && config.matchedCapital >= config.capital) {
+                throw new ValidationError('Gói đã sử dụng hết vốn. Tăng vốn trước khi kích hoạt lại.');
+            }
+
+            config.status = status;
             await config.save();
 
+            const statusLabel = status === 'active' ? 'Đã kích hoạt' : 'Đã tạm dừng';
             return res.json({
                 success: true,
-                message: `Đã chuyển trạng thái sang ${status}`,
+                message: statusLabel,
                 data: config
             });
         } catch (error) {

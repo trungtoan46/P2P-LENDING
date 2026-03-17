@@ -3,6 +3,7 @@
  */
 
 const Notification = require('../models/Notification');
+const Reminder = require('../models/Reminder');
 const { NOTIFICATION_TYPE, NOTIFICATION_STATUS } = Notification;
 const firebaseService = require('../external/firebase');
 const logger = require('../utils/logger');
@@ -47,12 +48,65 @@ class NotificationService {
     }
 
     /**
-     * Lấy danh sách thông báo của user
+     * Lấy danh sách thông báo + nhắc hẹn đã đến hạn
      */
-    async getMyNotifications(userId, limit = 20) {
-        return await Notification.find({ userId })
+    async getMyNotifications(userId, limit = 50) {
+        // 1. Lấy notifications từ Notification collection
+        const notifications = await Notification.find({ userId })
             .sort({ createdAt: -1 })
-            .limit(limit);
+            .limit(limit)
+            .lean();
+
+        // 2. Lấy reminders đã đến hạn (scheduledAt <= now) - chuyển thành notification format
+        const now = new Date();
+        const reminders = await Reminder.find({
+            userId,
+            scheduledAt: { $lte: now }
+        })
+            .populate('paymentId', 'orderNo totalAmount dueDate')
+            .populate('loanId', 'purpose capital')
+            .sort({ scheduledAt: -1 })
+            .limit(limit)
+            .lean();
+
+        const reminderNotifications = reminders.map(r => {
+            const payment = r.paymentId;
+            const loan = r.loanId;
+            const daysLabel = r.type === 'before_3_days' ? '3 ngày'
+                : r.type === 'before_1_day' ? '1 ngày'
+                : r.type === 'due_day' ? 'hôm nay'
+                : 'quá hạn';
+
+            const title = r.type === 'overdue'
+                ? `Kỳ ${payment?.orderNo || '?'} quá hạn`
+                : r.type === 'due_day'
+                    ? `Kỳ ${payment?.orderNo || '?'} đến hạn hôm nay`
+                    : `Kỳ ${payment?.orderNo || '?'} sắp đến hạn (${daysLabel})`;
+
+            const dueDate = payment?.dueDate ? new Date(payment.dueDate).toLocaleDateString('vi-VN') : '';
+            const amount = payment?.totalAmount ? new Intl.NumberFormat('vi-VN').format(payment.totalAmount) : '0';
+
+            return {
+                _id: `reminder_${r._id}`,
+                userId: r.userId,
+                type: 'payment_reminder',
+                title,
+                body: `Khoản vay "${loan?.purpose || ''}" cần thanh toán ${amount} đ vào ${dueDate}`,
+                data: {
+                    loanId: r.loanId?._id || r.loanId,
+                    paymentId: r.paymentId?._id || r.paymentId
+                },
+                status: r.isRead ? 'read' : 'unread',
+                createdAt: r.scheduledAt, // Dùng scheduledAt thay createdAt
+                isReminder: true
+            };
+        });
+
+        // 3. Merge và sort theo thời gian
+        const merged = [...notifications, ...reminderNotifications];
+        merged.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+        return merged.slice(0, limit);
     }
 
     /**

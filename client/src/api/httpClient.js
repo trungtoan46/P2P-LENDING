@@ -111,6 +111,17 @@ const httpClient = {
         return handleResponse(response);
     },
 
+    async patch(endpoint, body = {}, options = {}) {
+        const url = `${API_BASE_URL}${endpoint}`;
+        const headers = await createHeaders(options.auth !== false);
+        const response = await fetchWithTimeout(url, {
+            method: 'PATCH',
+            headers,
+            body: JSON.stringify(body),
+        });
+        return handleResponse(response);
+    },
+
     async upload(endpoint, formData, options = {}) {
         const url = `${API_BASE_URL}${endpoint}`;
         const token = await TokenManager.getAccessToken();

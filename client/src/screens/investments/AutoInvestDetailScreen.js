@@ -96,15 +96,43 @@ const AutoInvestDetailScreen = () => {
             Alert.alert('Lưu ý', 'Vốn đầu tư tối thiểu là 1,000,000 VND');
             return;
         }
+        const rawMaxCapital = maxCapitalPerLoan ? Number(maxCapitalPerLoan.replace(/\./g, '')) : 0;
+        if (rawMaxCapital && rawMaxCapital > rawCapital) {
+            Alert.alert('Lưu ý', 'Tối đa mỗi khoản vay không được lớn hơn tổng vốn');
+            return;
+        }
+        const nMinRate = Number(minRate);
+        const nMaxRate = Number(maxRate);
+        const nMinTerm = Number(minTerm);
+        const nMaxTerm = Number(maxTerm);
+        if (!nMinRate || !nMaxRate || nMinRate <= 0 || nMaxRate <= 0) {
+            Alert.alert('Lưu ý', 'Lãi suất phải lớn hơn 0');
+            return;
+        }
+        if (nMinRate > nMaxRate) {
+            Alert.alert('Lưu ý', 'Lãi suất tối thiểu phải nhỏ hơn tối đa');
+            return;
+        }
+        if (nMaxRate > 50) {
+            Alert.alert('Lưu ý', 'Lãi suất tối đa không quá 50%/năm');
+            return;
+        }
+        if (!nMinTerm || !nMaxTerm || nMinTerm < 1) {
+            Alert.alert('Lưu ý', 'Kỳ hạn tối thiểu là 1 tháng');
+            return;
+        }
+        if (nMinTerm > nMaxTerm) {
+            Alert.alert('Lưu ý', 'Kỳ hạn tối thiểu phải nhỏ hơn tối đa');
+            return;
+        }
 
         setSaving(true);
         try {
-            const rawMaxCapital = maxCapitalPerLoan ? Number(maxCapitalPerLoan.replace(/\./g, '')) : undefined;
             const data = {
                 capital: rawCapital,
-                maxCapitalPerLoan: rawMaxCapital,
-                interestRange: { min: Number(minRate), max: Number(maxRate) },
-                periodRange: { min: Number(minTerm), max: Number(maxTerm) },
+                maxCapitalPerLoan: rawMaxCapital || undefined,
+                interestRange: { min: nMinRate, max: nMaxRate },
+                periodRange: { min: nMinTerm, max: nMaxTerm },
                 status: isEnabled ? 'active' : 'paused'
             };
 
@@ -121,7 +149,7 @@ const AutoInvestDetailScreen = () => {
                 loadDetail();
             }
         } catch (error) {
-            const msg = error.response?.data?.message || 'Không thể lưu cấu hình';
+            const msg = error.response?.data?.message || error.data?.message || error.message || 'Không thể lưu cấu hình';
             Alert.alert('Lỗi', msg);
         } finally {
             setSaving(false);
@@ -137,7 +165,8 @@ const AutoInvestDetailScreen = () => {
             setConfigStatus(newState ? 'active' : 'paused');
         } catch (err) {
             setIsEnabled(!newState);
-            Alert.alert('Lỗi', 'Không thể thay đổi trạng thái');
+            console.error('Toggle error:', err.response?.data || err.message);
+            Alert.alert('Lỗi', err.response?.data?.message || err.message || 'Không thể thay đổi trạng thái');
         }
     };
 
@@ -383,7 +412,7 @@ const AutoInvestDetailScreen = () => {
                 )}
 
                 {/* Matched Loans from config.loans[] */}
-                {matchedLoans.length > 0 && waitingRooms.length === 0 && investments.length === 0 && (
+                {matchedLoans.length > 0 && (
                     <View style={styles.sectionCard}>
                         <View style={styles.sectionHeader}>
                             <MaterialCommunityIcons name="handshake-outline" size={20} color={Colors.primary} />

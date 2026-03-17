@@ -174,8 +174,9 @@ class EkycController {
                 }
             );
 
+            // eKYC không đạt nhưng vẫn trả 200 -- đây là kết quả bình thường
             if (!result.success) {
-                return res.status(400).json({
+                return res.status(200).json({
                     success: false,
                     message: result.message,
                     data: result.data

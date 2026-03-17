@@ -50,7 +50,8 @@ const AutoInvestScreen = () => {
             await AutoInvestApi.toggleStatus(campaign._id, newStatus);
             loadCampaigns();
         } catch (err) {
-            Alert.alert('Lỗi', 'Không thể thay đổi trạng thái');
+            console.error('Toggle status error:', err.response?.data || err.message);
+            Alert.alert('Lỗi', err.response?.data?.message || err.message || 'Không thể thay đổi trạng thái');
         }
     };
 

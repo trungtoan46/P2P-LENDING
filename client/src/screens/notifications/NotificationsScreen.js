@@ -58,6 +58,12 @@ const NotificationsScreen = ({ navigation }) => {
             case 'repayment_received': return 'cash-check';
             case 'new_loan_available': return 'file-document-plus';
             case 'investment_matured': return 'calendar-check';
+            case 'payment_reminder': return 'clock-alert-outline';
+            case 'loan_signed': return 'file-sign';
+            case 'loan_created': return 'file-document-plus-outline';
+            case 'loan_funded': return 'hand-coin';
+            case 'loan_approved': return 'check-circle-outline';
+            case 'repayment_success': return 'cash-check';
             default: return 'bell-outline';
         }
     };
@@ -70,8 +76,14 @@ const NotificationsScreen = ({ navigation }) => {
             case 'loan_completed': return Colors.success;
             case 'loan_disbursed': return '#8b5cf6';
             case 'repayment_received': return Colors.success;
+            case 'repayment_success': return Colors.success;
             case 'new_loan_available': return '#3b82f6';
             case 'investment_matured': return '#f59e0b';
+            case 'payment_reminder': return '#f59e0b';
+            case 'loan_signed': return '#10b981';
+            case 'loan_created': return '#3b82f6';
+            case 'loan_funded': return '#10b981';
+            case 'loan_approved': return '#10b981';
             default: return '#6b7280';
         }
     };

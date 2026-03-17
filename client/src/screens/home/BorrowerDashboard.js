@@ -27,7 +27,7 @@ import { formatMoney, formatDate } from '../../utils';
 
 const KYC_STATUS = {
     approved: { label: 'Đã xác minh', color: '#22c55e' },
-    pending: { label: 'Chưa xác minh', color: '#eab308' },
+    pending: { label: 'Đang xét duyệt', color: '#eab308' },
     rejected: { label: 'Bị từ chối', color: '#ef4444' },
 };
 
